@@ -160,9 +160,18 @@ The MVP uses a mock Twilio client that:
 
 To see bot responses, watch the console output.
 
-## Next Steps
+## Backlog
 
-- [ ] Add real Twilio integration (when ready for production)
+### Current Priorities
+
+- [ ] **Wait for A2P compliance approval** - Application submitted, waiting for Twilio approval
+- [ ] **Continue backend testing** - Keep testing backend to ensure it works correctly
+- [ ] **Integrate real SMS** - Replace mock Twilio client with real Twilio integration
+- [ ] **Implement group messaging support** - Make sure SMS works properly with group messaging (this will be challenging)
+- [ ] **Test with real users** - Get real people to test the system end-to-end
+
+### Future Enhancements
+
 - [ ] Add web dashboard
 - [ ] Add expense tracking
 - [ ] Add itinerary generation
