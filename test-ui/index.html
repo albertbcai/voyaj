@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voyaj Test Interface</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #f5f5f5;
+    }
+    .header {
+      background: #2563eb;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      margin: 0;
+      flex: 1;
+    }
+    .add-bot-button {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .add-bot-button:hover {
+      background: #059669;
+    }
+    .add-bot-button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .reset-button {
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .reset-button:hover {
+      background: #b91c1c;
+    }
+    .reset-button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .config {
+      background: white;
+      padding: 1rem;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .config label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      font-size: 0.875rem;
+    }
+    .config input {
+      padding: 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      min-width: 200px;
+    }
+    .persona-panel {
+      background: white;
+      padding: 1rem;
+      border-bottom: 1px solid #e5e7eb;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .persona-panel h3 {
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+      color: #6b7280;
+    }
+    .personas {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .persona {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.5rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      min-width: 150px;
+    }
+    .persona-name {
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+    .persona-buttons {
+      display: flex;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+    }
+    .persona-buttons button {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .persona-buttons button:hover {
+      background: #e5e7eb;
+    }
+    .persona-buttons button.primary {
+      background: #2563eb;
+      color: white;
+    }
+    .persona-buttons button.primary:hover {
+      background: #1d4ed8;
+    }
+    .persona-buttons button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      background: white;
+    }
+    .message {
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      border-radius: 8px;
+      max-width: 80%;
+      word-wrap: break-word;
+    }
+    .message.user {
+      background: #2563eb;
+      color: white;
+      margin-left: auto;
+      text-align: right;
+    }
+    .message.bot {
+      background: #e5e7eb;
+      color: #1f2937;
+    }
+    .message.persona {
+      margin-left: 0;
+      color: white;
+    }
+    .message-sender {
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      opacity: 0.9;
+    }
+    .message-time {
+      font-size: 0.75rem;
+      opacity: 0.7;
+      margin-top: 0.25rem;
+    }
+    .input-area {
+      background: white;
+      padding: 1rem;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      gap: 0.5rem;
+    }
+    .input-area input {
+      flex: 1;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 1rem;
+    }
+    .input-area button {
+      padding: 0.75rem 1.5rem;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .input-area button:hover {
+      background: #1d4ed8;
+    }
+    .input-area button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .status {
+      padding: 0.5rem 1rem;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.875rem;
+    }
+    .status.ready {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🤖 Voyaj Test Interface</h1>
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="add-bot-button" id="addBotButton" onclick="addVoyajToGroup()" title="Simulate adding Voyaj to the group chat">
+        ➕ Add Voyaj to Group
+      </button>
+      <button class="reset-button" id="resetButton" onclick="resetDatabase()" title="Clear all trips, members, and messages">
+        🔄 Reset Database
+      </button>
+      <button class="add-bot-button" id="advanceTimeButton" onclick="advanceTime()" title="Simulate 1 day passing (for testing timeouts)">
+        ⏰ +1 Day
+      </button>
+    </div>
+  </div>
+  
+  <div class="config">
+    <label>
+      Your Phone Number:
+      <input type="text" id="phoneNumber" value="+15551234567" placeholder="+15551234567">
+    </label>
+    <label>
+      Group ID (auto-generated, or enter existing):
+      <input type="text" id="groupId" placeholder="Auto-generated when you add Voyaj" readonly>
+    </label>
+  </div>
+
+  <div class="persona-panel" id="personaPanel">
+    <h3>Group Chat Personas</h3>
+    <div class="personas" id="personas"></div>
+  </div>
+
+  <div class="status ready" id="status">Ready</div>
+
+  <div class="chat" id="chat"></div>
+
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter') sendMessage()">
+    <button id="sendButton" onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    // Inline persona definitions and context parser to avoid module import issues
+    const PERSONAS = [
+      {
+        id: 'alex',
+        name: 'Alex',
+        phoneNumber: '+15550000001',
+        description: 'an enthusiastic planner who loves organizing trips',
+        traits: [
+          'Quick to respond and suggest ideas',
+          'Gets excited about destinations',
+          'Votes early and decisively',
+          'Sometimes sends casual "can\'t wait!" messages',
+          'Asks logistical questions occasionally'
+        ],
+        color: '#3b82f6',
+        casualFrequency: 0.2
+      },
+      {
+        id: 'sam',
+        name: 'Sam',
+        phoneNumber: '+15550000002',
+        description: 'an indecisive friend who takes time to commit',
+        traits: [
+          'Asks lots of questions before deciding',
+          'Changes mind sometimes',
+          'Slow to respond',
+          'Prefers flexibility',
+          'Sends "hmm" or "not sure" messages'
+        ],
+        color: '#10b981',
+        casualFrequency: 0.1
+      },
+      {
+        id: 'jordan',
+        name: 'Jordan',
+        phoneNumber: '+15550000003',
+        description: 'a casual participant who sends off-topic messages',
+        traits: [
+          'Sends casual messages frequently',
+          'Sometimes goes off-topic',
+          'Short responses like "sounds good"',
+          'Flexible and laid-back',
+          'Occasionally asks random questions'
+        ],
+        color: '#f59e0b',
+        casualFrequency: 0.5
+      },
+      {
+        id: 'taylor',
+        name: 'Taylor',
+        phoneNumber: '+15550000004',
+        description: 'a detail-oriented person who wants specifics',
+        traits: [
+          'Asks about logistics and details',
+          'Wants to know exact dates and times',
+          'Asks "what about hotels?" type questions',
+          'Provides detailed responses',
+          'Sometimes sends longer messages'
+        ],
+        color: '#8b5cf6',
+        casualFrequency: 0.15
+      },
+      {
+        id: 'riley',
+        name: 'Riley',
+        phoneNumber: '+15550000005',
+        description: 'a laid-back friend who goes with the flow',
+        traits: [
+          'Very flexible - "whatever works"',
+          'Short, simple responses',
+          'Rarely asks questions',
+          'Quick to agree',
+          'Sends casual "cool" or "nice" messages'
+        ],
+        color: '#ec4899',
+        casualFrequency: 0.3
+      }
+    ];
+
+    function parseChatContext(chatHistory) {
+      const botMessages = chatHistory
+        .filter(msg => msg.sender === 'Bot' || msg.sender === 'Voyaj')
+        .slice(-5)
+        .map(msg => msg.text.toLowerCase());
+
+      if (botMessages.some(msg => msg.includes('reply with your name') || msg.includes('everyone reply'))) {
+        return { stage: 'collecting_members', action: 'join' };
+      }
+      if (botMessages.some(msg => msg.includes('where should we go') || msg.includes('destination'))) {
+        return { stage: 'collecting_destinations', action: 'suggest_destination' };
+      }
+      if (botMessages.some(msg => msg.includes('here are your options') || msg.includes('vote with just the number'))) {
+        const hasDestinationOptions = botMessages.some(msg => 
+          msg.includes('portugal') || msg.includes('greece') || msg.includes('italy') || 
+          msg.includes('1️⃣') || msg.includes('2️⃣') || msg.includes('3️⃣')
+        );
+        if (hasDestinationOptions) {
+          return { stage: 'voting_destination', action: 'vote_destination' };
+        }
+        return { stage: 'voting_dates', action: 'vote_dates' };
+      }
+      if (botMessages.some(msg => msg.includes('when can everyone go') || msg.includes('date availability'))) {
+        return { stage: 'collecting_dates', action: 'provide_dates' };
+      }
+      if (botMessages.some(msg => msg.includes('book your flights') || msg.includes('text me when you book'))) {
+        return { stage: 'tracking_flights', action: 'report_flight' };
+      }
+      return { stage: 'conversation', action: 'chat' };
+    }
+
+    function getPersonaAction(context, persona, chatHistory) {
+      const { stage, action } = context;
+      const personaMessages = chatHistory.filter(msg => msg.sender === persona.name).slice(-5);
+
+      if (action === 'casual') {
+        return { type: 'casual', needsAI: true };
+      }
+
+      switch (stage) {
+        case 'collecting_members':
+          const hasJoined = personaMessages.some(msg => 
+            msg.text.toLowerCase().includes(persona.name.toLowerCase()) || msg.text.length < 30
+          );
+          if (!hasJoined) {
+            return { type: 'join', message: persona.name };
+          }
+          break;
+        case 'collecting_destinations':
+          const hasSuggested = personaMessages.some(msg => 
+            msg.text.length > 2 && !msg.text.match(/^\d+$/) && 
+            !msg.text.toLowerCase().includes('ok')
+          );
+          if (!hasSuggested) {
+            return { type: 'suggest_destination', needsAI: true };
+          }
+          break;
+        case 'voting_destination':
+        case 'voting_dates':
+          const hasVoted = personaMessages.some(msg => msg.text.match(/^\d+$/));
+          if (!hasVoted) {
+            return { type: 'vote', message: '1' };
+          }
+          break;
+        case 'collecting_dates':
+          const hasProvidedDates = personaMessages.some(msg => 
+            msg.text.toLowerCase().includes('flexible') || msg.text.match(/\d+\/\d+/)
+          );
+          if (!hasProvidedDates) {
+            return { type: 'provide_dates', needsAI: true };
+          }
+          break;
+        case 'tracking_flights':
+          const hasReportedFlight = personaMessages.some(msg => 
+            msg.text.toLowerCase().includes('booked') || msg.text.toLowerCase().includes('flight')
+          );
+          if (!hasReportedFlight) {
+            return { type: 'report_flight', needsAI: true };
+          }
+          break;
+      }
+      return { type: 'casual', needsAI: true };
+    }
+
+    const API_URL = 'http://localhost:3000';
+    let lastMessageTime = null;
+    let shownMessageIds = new Set(); // Track shown messages by content+timestamp to avoid duplicates
+    let pollInterval = null;
+    let isPolling = false;
+    let chatHistory = [];
+    let groupId = null;
+
+    function updateStatus(message, type = 'ready') {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`;
+    }
+
+    function addMessage(text, sender, isUser = false) {
+      const chat = document.getElementById('chat');
+      const messageDiv = document.createElement('div');
+      
+      // Determine message class
+      let messageClass = 'message';
+      if (isUser) {
+        messageClass += ' user';
+      } else if (sender === 'Bot' || sender === 'Voyaj') {
+        messageClass += ' bot';
+      } else if (sender === 'System') {
+        messageClass += ' system';
+      } else {
+        messageClass += ' persona';
+        // Set background color for persona
+        const persona = PERSONAS.find(p => p.name === sender);
+        if (persona) {
+          messageDiv.style.backgroundColor = persona.color;
+        }
+      }
+      
+      messageDiv.className = messageClass;
+      
+      const senderName = sender && sender !== 'You' ? `<div class="message-sender">${escapeHtml(sender)}</div>` : '';
+      messageDiv.innerHTML = `
+        ${senderName}
+        <div>${escapeHtml(text)}</div>
+        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+      `;
+      chat.appendChild(messageDiv);
+      chat.scrollTop = chat.scrollHeight;
+
+      // Add to chat history
+      chatHistory.push({
+        text,
+        sender: sender || 'You',
+        timestamp: Date.now()
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const sendButton = document.getElementById('sendButton');
+      const phoneNumber = document.getElementById('phoneNumber').value;
+      const currentGroupId = document.getElementById('groupId').value;
+      const message = input.value.trim();
+
+      if (!message || !phoneNumber) {
+        alert('Please enter a message and phone number');
+        return;
+      }
+
+      // Update group ID if changed
+      if (currentGroupId) {
+        groupId = currentGroupId;
+      }
+
+      // Show user message
+      addMessage(message, 'You', true);
+      input.value = '';
+      sendButton.disabled = true;
+      updateStatus('Sending...', 'ready');
+
+      try {
+        const response = await fetch(`${API_URL}/test/sms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: phoneNumber,
+            body: message,
+            groupId: groupId || undefined
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          updateStatus('Message sent. Waiting for response...', 'ready');
+          lastMessageTime = Date.now();
+          startPolling(phoneNumber);
+        } else {
+          updateStatus('Error: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        updateStatus('Error: ' + error.message, 'error');
+        console.error('Error sending message:', error);
+      } finally {
+        sendButton.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function checkForResponse(phoneNumber) {
+      try {
+        // Try to get group ID first
+        const currentGroupId = document.getElementById('groupId').value || groupId;
+        
+        let data = null;
+        
+        // If we have a group ID, use the group endpoint (better for group messages)
+        if (currentGroupId) {
+          try {
+            // Pass phone number as query param so endpoint can check it even if no members exist yet
+            const url = `${API_URL}/test/responses/group/${currentGroupId}/latest?phoneNumber=${encodeURIComponent(phoneNumber)}`;
+            console.log('🔍 Polling for messages:', url);
+            const response = await fetch(url);
+            data = await response.json();
+            console.log('📥 Response from group endpoint:', data);
+          } catch (error) {
+            console.warn('Error fetching group messages, falling back to phone number:', error);
+            // Fall back to phone number endpoint
+            const response = await fetch(`${API_URL}/test/responses/${phoneNumber}/latest`);
+            data = await response.json();
+            console.log('📥 Response from phone endpoint:', data);
+          }
+        } else {
+          // No group ID yet, use phone number endpoint
+          const response = await fetch(`${API_URL}/test/responses/${phoneNumber}/latest`);
+          data = await response.json();
+          console.log('📥 Response from phone endpoint (no group ID):', data);
+        }
+        
+        if (data.message && data.message.timestamp) {
+          console.log('✅ Found message:', data.message.body.substring(0, 50) + '...');
+          const messageTime = new Date(data.message.timestamp).getTime();
+          
+          // Create a unique ID for this message (content + timestamp)
+          const messageId = `${data.message.body.substring(0, 100)}_${messageTime}`;
+          
+          // Only show if it's a new message we haven't seen before
+          // Use >= instead of > to catch messages with same timestamp, and check messageId first
+          if (!shownMessageIds.has(messageId)) {
+            // Also check timestamp to avoid showing very old messages on refresh
+            if (!lastMessageTime || messageTime >= lastMessageTime - 1000) { // Allow 1 second tolerance
+              console.log(`   📨 Displaying message (lastMessageTime: ${lastMessageTime}, messageTime: ${messageTime})`);
+              addMessage(data.message.body, 'Bot', false);
+              shownMessageIds.add(messageId);
+              lastMessageTime = Math.max(lastMessageTime || 0, messageTime);
+              
+              // Update group ID if we got a response (means trip exists)
+              if (!groupId && currentGroupId) {
+                groupId = currentGroupId;
+              } else if (!groupId) {
+                const groupIdInput = document.getElementById('groupId').value;
+                if (groupIdInput) {
+                  groupId = groupIdInput;
+                } else {
+                  // Generate a group ID for this session
+                  groupId = `test-group-${Date.now()}`;
+                  document.getElementById('groupId').value = groupId;
+                }
+              }
+              updateStatus('Response received', 'ready');
+              
+              // Continue polling for a bit in case there are more messages
+              setTimeout(() => {
+                if (isPolling) {
+                  stopPolling();
+                }
+              }, 2000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for response:', error);
+      }
+    }
+
+    function startPolling(phoneNumber) {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+
+      isPolling = true;
+
+      pollInterval = setInterval(() => {
+        checkForResponse(phoneNumber);
+      }, 300); // Poll more frequently to catch messages faster
+
+      setTimeout(() => {
+        if (isPolling) {
+          stopPolling();
+        }
+      }, 30000); // Poll for longer to catch delayed responses
+    }
+
+    function stopPolling() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        isPolling = false;
+        updateStatus('Ready', 'ready');
+      }
+    }
+
+    // Persona functions
+    function renderPersonas() {
+      const container = document.getElementById('personas');
+      container.innerHTML = '';
+
+      PERSONAS.forEach(persona => {
+        const personaDiv = document.createElement('div');
+        personaDiv.className = 'persona';
+        personaDiv.innerHTML = `
+          <div class="persona-name" style="color: ${persona.color}">${persona.name}</div>
+          <div class="persona-buttons">
+            <button class="primary" onclick="addPersonaToTrip('${persona.id}')">Add to Trip</button>
+            <button onclick="personaRespond('${persona.id}')">Respond</button>
+            <button onclick="personaCasual('${persona.id}')">Casual</button>
+          </div>
+        `;
+        container.appendChild(personaDiv);
+      });
+    }
+
+    window.addPersonaToTrip = async function(personaId) {
+      const persona = PERSONAS.find(p => p.id === personaId);
+      if (!persona) return;
+
+      const currentGroupId = document.getElementById('groupId').value || groupId;
+      
+      // Send persona's name as join message
+      addMessage(persona.name, persona.name, false);
+      
+      try {
+        await fetch(`${API_URL}/test/sms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: persona.phoneNumber,
+            body: persona.name,
+            groupId: currentGroupId || undefined
+          })
+        });
+        updateStatus(`${persona.name} added to trip`, 'ready');
+      } catch (error) {
+        updateStatus('Error adding persona: ' + error.message, 'error');
+      }
+    };
+
+    window.personaRespond = async function(personaId) {
+      const persona = PERSONAS.find(p => p.id === personaId);
+      if (!persona) return;
+
+      // Parse chat context
+      const context = parseChatContext(chatHistory);
+      const action = getPersonaAction(context, persona, chatHistory);
+
+      updateStatus(`Generating response for ${persona.name}...`, 'ready');
+
+      let message;
+      
+      if (action.needsAI) {
+        // Use AI to generate response
+        try {
+          const response = await fetch(`${API_URL}/test/persona/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              persona,
+              chatHistory: chatHistory.map(msg => ({
+                sender: msg.sender,
+                text: msg.text
+              })),
+              casual: false
+            })
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            message = data.message;
+          } else {
+            message = action.message || 'Ok';
+          }
+        } catch (error) {
+          console.error('Error generating persona response:', error);
+          message = action.message || 'Ok';
+        }
+      } else {
+        message = action.message || 'Ok';
+      }
+
+      // Send persona message
+      addMessage(message, persona.name, false);
+
+      const currentGroupId = document.getElementById('groupId').value || groupId;
+      
+      try {
+        await fetch(`${API_URL}/test/sms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: persona.phoneNumber,
+            body: message,
+            groupId: currentGroupId || undefined
+          })
+        });
+        
+        // Poll for bot response - check multiple times with increasing delays
+        // to catch messages that might take a moment to process
+        const phoneNum = document.getElementById('phoneNumber').value;
+        setTimeout(() => checkForResponse(phoneNum), 500);
+        setTimeout(() => checkForResponse(phoneNum), 1500);
+        setTimeout(() => checkForResponse(phoneNum), 3000);
+        setTimeout(() => checkForResponse(phoneNum), 5000);
+      } catch (error) {
+        updateStatus('Error sending persona message: ' + error.message, 'error');
+      }
+    };
+
+    window.personaCasual = async function(personaId) {
+      const persona = PERSONAS.find(p => p.id === personaId);
+      if (!persona) return;
+
+      updateStatus(`Generating casual message for ${persona.name}...`, 'ready');
+
+      try {
+        const response = await fetch(`${API_URL}/test/persona/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persona,
+            chatHistory: chatHistory.map(msg => ({
+              sender: msg.sender,
+              text: msg.text
+            })),
+            casual: true
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          const message = data.message;
+          addMessage(message, persona.name, false);
+
+          const currentGroupId = document.getElementById('groupId').value || groupId;
+          
+          await fetch(`${API_URL}/test/sms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: persona.phoneNumber,
+              body: message,
+              groupId: currentGroupId || undefined
+            })
+          });
+        }
+      } catch (error) {
+        updateStatus('Error generating casual message: ' + error.message, 'error');
+      }
+    };
+
+    async function addVoyajToGroup() {
+      const addBotButton = document.getElementById('addBotButton');
+      const groupIdInput = document.getElementById('groupId');
+      
+      // Auto-generate group ID if not already set
+      let groupId = groupIdInput.value.trim();
+      if (!groupId) {
+        // Generate a unique group ID (simulating Twilio's group chat ID)
+        groupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        groupIdInput.value = groupId;
+        groupIdInput.style.backgroundColor = '#f0f9ff'; // Light blue to show it was auto-generated
+      }
+      
+      addBotButton.disabled = true;
+      updateStatus('Adding Voyaj to group chat...', 'ready');
+      
+      try {
+        // Get phone numbers from personas that might be in the group
+        // In a real scenario, Twilio would provide these, but for testing we'll use the current user's phone
+        const phoneNumber = document.getElementById('phoneNumber').value;
+        
+        const response = await fetch(`${API_URL}/test/add-bot`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupId: groupId,
+            phoneNumbers: [phoneNumber] // In real scenario, Twilio would provide all group members
+          })
+        });
+        
+        // Check if response is OK before parsing JSON
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Server error: ${response.status} - ${text.substring(0, 100)}`);
+        }
+        
+        const data = await response.json();
+        if (data.success) {
+          updateStatus('Voyaj added to group chat!', 'ready');
+          
+          // Store group ID globally so all messages use it
+          if (data.groupId) {
+            groupId = data.groupId;
+            document.getElementById('groupId').value = groupId;
+          } else if (data.tripId) {
+            // Fallback: use tripId if groupId not provided
+            groupId = data.tripId;
+            document.getElementById('groupId').value = groupId;
+          }
+          
+          // Show system message
+          addMessage('Voyaj has been added to the group chat! 🤖', 'System', false);
+          
+          // Reset lastMessageTime and shown messages so welcome message will be shown
+          lastMessageTime = null;
+          shownMessageIds.clear();
+          
+          // Poll for the welcome message
+          setTimeout(() => {
+            checkForResponse(phoneNumber);
+            startPolling(phoneNumber);
+          }, 500);
+          
+          setTimeout(() => {
+            updateStatus('Ready', 'ready');
+          }, 2000);
+        } else {
+          updateStatus('Error: ' + (data.message || data.error || 'Unknown error'), 'error');
+          if (data.message) {
+            addMessage(data.message, 'System', false);
+          }
+        }
+      } catch (error) {
+        updateStatus('Error: ' + error.message, 'error');
+        console.error('Error adding Voyaj to group:', error);
+      } finally {
+        addBotButton.disabled = false;
+      }
+    }
+
+    async function advanceTime() {
+      const advanceButton = document.getElementById('advanceTimeButton');
+      const currentGroupId = document.getElementById('groupId').value || groupId;
+      
+      if (!currentGroupId) {
+        updateStatus('Please add Voyaj to a group first', 'error');
+        return;
+      }
+      
+      advanceButton.disabled = true;
+      updateStatus('Advancing time by 1 day...', 'ready');
+      
+      try {
+        const response = await fetch(`${API_URL}/test/advance-time`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId: currentGroupId })
+        });
+        
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Server error: ${response.status} - ${text.substring(0, 100)}`);
+        }
+        
+        const data = await response.json();
+        if (data.success) {
+          updateStatus('⏰ Time advanced by 1 day! All timestamps updated.', 'ready');
+          addMessage('⏰ 1 day has passed (simulated for testing)', 'System', false);
+          
+          setTimeout(() => {
+            updateStatus('Ready', 'ready');
+          }, 2000);
+        } else {
+          throw new Error(data.error || 'Failed to advance time');
+        }
+      } catch (error) {
+        updateStatus('Error advancing time: ' + error.message, 'error');
+        console.error('Error advancing time:', error);
+      } finally {
+        advanceButton.disabled = false;
+      }
+    }
+
+    // Initialize
+    async function resetDatabase() {
+      const resetButton = document.getElementById('resetButton');
+      const confirmed = confirm('Are you sure you want to reset the database? This will delete all trips, members, and messages.');
+      
+      if (!confirmed) {
+        return;
+      }
+      
+      resetButton.disabled = true;
+      updateStatus('Resetting database...', 'ready');
+      
+      try {
+        const response = await fetch(`${API_URL}/test/reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          updateStatus('Database reset successfully!', 'ready');
+          
+          // Clear the chat
+          document.getElementById('chat').innerHTML = '';
+          chatHistory = [];
+          lastMessageTime = null;
+          shownMessageIds.clear();
+          groupId = null;
+          document.getElementById('groupId').value = '';
+          
+          // Show system message
+          addMessage('Database has been reset. All trips, members, and messages have been cleared.', 'System', false);
+          
+          setTimeout(() => {
+            updateStatus('Ready', 'ready');
+          }, 2000);
+        } else {
+          updateStatus('Error: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        updateStatus('Error: ' + error.message, 'error');
+        console.error('Error resetting database:', error);
+      } finally {
+        resetButton.disabled = false;
+      }
+    }
+
+    window.addEventListener('load', () => {
+      renderPersonas();
+      const phoneNumber = document.getElementById('phoneNumber').value;
+      checkForResponse(phoneNumber);
+      document.getElementById('messageInput').focus();
+    });
+  </script>
+</body>
+</html>

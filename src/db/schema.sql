@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS trips (
   stage TEXT NOT NULL DEFAULT 'created',
   stage_entered_at TIMESTAMP DEFAULT NOW(),
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  nudge_count INTEGER DEFAULT 0,
+  last_nudge_at TIMESTAMP,
+  all_flights_booked BOOLEAN DEFAULT FALSE,
+  notes JSONB DEFAULT '[]'::jsonb -- Store unstructured ideas/notes for later reference
 );
 
 CREATE INDEX IF NOT EXISTS idx_trips_group_chat ON trips(group_chat_id);
@@ -83,6 +87,36 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_trip ON messages(trip_id);
 CREATE INDEX IF NOT EXISTS idx_messages_received ON messages(received_at DESC);
 
+-- Destination suggestions table
+CREATE TABLE IF NOT EXISTS destination_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID REFERENCES trips(id) ON DELETE CASCADE,
+  member_id UUID REFERENCES members(id) ON DELETE CASCADE,
+  destination TEXT NOT NULL,
+  suggested_at TIMESTAMP DEFAULT NOW(),
+  
+  -- One suggestion per member per trip
+  UNIQUE(trip_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_destination_suggestions_trip ON destination_suggestions(trip_id);
+
+-- Date availability table
+CREATE TABLE IF NOT EXISTS date_availability (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID REFERENCES trips(id) ON DELETE CASCADE,
+  member_id UUID REFERENCES members(id) ON DELETE CASCADE,
+  start_date DATE,
+  end_date DATE,
+  is_flexible BOOLEAN DEFAULT FALSE,
+  submitted_at TIMESTAMP DEFAULT NOW(),
+  
+  -- One submission per member per trip
+  UNIQUE(trip_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_date_availability_trip ON date_availability(trip_id);
+
 -- Error logs table
 CREATE TABLE IF NOT EXISTS error_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -95,6 +129,7 @@ CREATE TABLE IF NOT EXISTS error_logs (
 
 CREATE INDEX IF NOT EXISTS idx_error_logs_trip ON error_logs(trip_id);
 CREATE INDEX IF NOT EXISTS idx_error_logs_created ON error_logs(created_at DESC);
+
 
 
 

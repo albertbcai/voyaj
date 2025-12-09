@@ -98,3 +98,4 @@ That's it! No code changes needed.
 - Same code works for local PostgreSQL and Supabase
 
 
+

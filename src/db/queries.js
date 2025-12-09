@@ -3,7 +3,7 @@ import { config } from '../config/index.js';
 
 const { Pool } = pg;
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: config.database.url,
 });
 
@@ -190,6 +190,90 @@ export async function getRecentMessages(tripId, limit = 10) {
   return result.rows.reverse(); // Return in chronological order
 }
 
+// Destination suggestions
+export async function createDestinationSuggestion(tripId, memberId, destination) {
+  const result = await pool.query(
+    `INSERT INTO destination_suggestions (trip_id, member_id, destination)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (trip_id, member_id) DO UPDATE SET destination = $3, suggested_at = NOW()
+     RETURNING *`,
+    [tripId, memberId, destination]
+  );
+  return result.rows[0];
+}
+
+export async function getDestinationSuggestions(tripId) {
+  const result = await pool.query(
+    `SELECT ds.*, m.name as member_name
+     FROM destination_suggestions ds
+     JOIN members m ON ds.member_id = m.id
+     WHERE ds.trip_id = $1
+     ORDER BY ds.suggested_at ASC`,
+    [tripId]
+  );
+  return result.rows;
+}
+
+export async function getDestinationSuggestionCount(tripId) {
+  const result = await pool.query(
+    'SELECT COUNT(*) as count FROM destination_suggestions WHERE trip_id = $1',
+    [tripId]
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+// Date availability
+export async function createDateAvailability(tripId, memberId, data) {
+  const { startDate, endDate, isFlexible } = data;
+  const result = await pool.query(
+    `INSERT INTO date_availability (trip_id, member_id, start_date, end_date, is_flexible)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (trip_id, member_id) DO UPDATE SET
+       start_date = $3, end_date = $4, is_flexible = $5, submitted_at = NOW()
+     RETURNING *`,
+    [tripId, memberId, startDate, endDate, isFlexible || false]
+  );
+  return result.rows[0];
+}
+
+export async function getDateAvailability(tripId) {
+  const result = await pool.query(
+    `SELECT da.*, m.name as member_name
+     FROM date_availability da
+     JOIN members m ON da.member_id = m.id
+     WHERE da.trip_id = $1
+     ORDER BY da.submitted_at ASC`,
+    [tripId]
+  );
+  return result.rows;
+}
+
+export async function getDateAvailabilityCount(tripId) {
+  const result = await pool.query(
+    'SELECT COUNT(*) as count FROM date_availability WHERE trip_id = $1',
+    [tripId]
+  );
+  return parseInt(result.rows[0].count, 10);
+}
+
+// Trip notes/ideas (unstructured ideas for later reference)
+export async function addTripNote(tripId, note) {
+  const trip = await getTrip(tripId);
+  const currentNotes = trip.notes || [];
+  const newNote = {
+    text: note,
+    addedAt: new Date().toISOString(),
+  };
+  const updatedNotes = [...currentNotes, newNote];
+  await updateTrip(tripId, { notes: JSON.stringify(updatedNotes) });
+  return newNote;
+}
+
+export async function getTripNotes(tripId) {
+  const trip = await getTrip(tripId);
+  return trip.notes || [];
+}
+
 // Error logs
 export async function logError(tripId, error, context = {}) {
   await pool.query(
@@ -198,6 +282,106 @@ export async function logError(tripId, error, context = {}) {
     [tripId, error.message, error.stack, JSON.stringify(context)]
   );
 }
+
+// Helper: Get active trips for nudge scheduler
+export async function getActiveTrips() {
+  try {
+    // Try query with last_nudge_at column
+    const result = await pool.query(
+      `SELECT * FROM trips
+       WHERE stage IN ('collecting_destinations', 'voting_destination', 'collecting_dates', 'voting_dates', 'tracking_flights')
+       AND (last_nudge_at IS NULL OR last_nudge_at < NOW() - INTERVAL '6 hours')
+       ORDER BY updated_at DESC`,
+      []
+    );
+    return result.rows;
+  } catch (error) {
+    // If column doesn't exist, fall back to query without it
+    if (error.code === '42703' && error.message.includes('last_nudge_at')) {
+      console.warn('   ⚠️  Column last_nudge_at does not exist, using fallback query');
+      const result = await pool.query(
+        `SELECT * FROM trips
+         WHERE stage IN ('collecting_destinations', 'voting_destination', 'collecting_dates', 'voting_dates', 'tracking_flights')
+         ORDER BY updated_at DESC`,
+        []
+      );
+      return result.rows;
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
+// Preference tracking helpers
+export async function addTripPreference(tripId, memberId, preferenceType, preferenceText, originalMessage) {
+  try {
+    // Get current trip and notes
+    const trip = await getTrip(tripId);
+    const member = await pool.query('SELECT name FROM members WHERE id = $1', [memberId]);
+    const memberName = member.rows[0]?.name || 'Unknown';
+    
+    // Parse existing notes (handle both array and object formats)
+    let notes = {};
+    if (trip.notes) {
+      try {
+        notes = typeof trip.notes === 'string' ? JSON.parse(trip.notes) : trip.notes;
+      } catch (e) {
+        // If notes is not valid JSON, start fresh
+        notes = {};
+      }
+    }
+    
+    // Initialize preferences structure
+    if (!notes.preferences) {
+      notes.preferences = {};
+    }
+    if (!notes.preferences[preferenceType]) {
+      notes.preferences[preferenceType] = [];
+    }
+    
+    // Add new preference
+    notes.preferences[preferenceType].push({
+      member_id: memberId,
+      member_name: memberName,
+      text: preferenceText,
+      original_message: originalMessage,
+      extracted_at: new Date().toISOString()
+    });
+    
+    // Update trip notes
+    await pool.query(
+      `UPDATE trips SET notes = $1, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(notes), tripId]
+    );
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error adding trip preference:', error);
+    throw error;
+  }
+}
+
+export async function getTripPreferences(tripId) {
+  try {
+    const trip = await getTrip(tripId);
+    if (!trip || !trip.notes) {
+      return null;
+    }
+    
+    let notes = {};
+    try {
+      notes = typeof trip.notes === 'string' ? JSON.parse(trip.notes) : trip.notes;
+    } catch (e) {
+      return null;
+    }
+    
+    return notes.preferences || null;
+  } catch (error) {
+    console.error('Error getting trip preferences:', error);
+    return null;
+  }
+}
+
 
 
 

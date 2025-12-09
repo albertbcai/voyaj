@@ -35,14 +35,35 @@ export class ContextBuilder {
     switch (agentType) {
       case 'voting': {
         const trip = await db.getTrip(tripId);
-        const pollType = trip.stage === 'voting_destination' ? 'destination' : 'dates';
-        return {
-          currentPoll: {
+        let pollType = null;
+        if (trip.stage === 'voting_destination') {
+          pollType = 'destination';
+        } else if (trip.stage === 'voting_dates') {
+          pollType = 'dates';
+        }
+        
+        const context = {};
+        
+        if (pollType) {
+          context.currentPoll = {
             type: pollType,
             tripId,
-          },
-          existingVotes: await db.getVotes(tripId, pollType),
-        };
+          };
+          context.existingVotes = await db.getVotes(tripId, pollType);
+        }
+        
+        // Add suggestion/availability context for collection phases
+        if (trip.stage === 'collecting_destinations') {
+          context.destinationSuggestions = await db.getDestinationSuggestions(tripId);
+        } else if (trip.stage === 'voting_dates') {
+          // For date voting, we need to regenerate options from availability
+          const availability = await db.getDateAvailability(tripId);
+          const { findOverlappingDates } = await import('../utils/dateOverlap.js');
+          const options = findOverlappingDates(availability);
+          context.dateOptions = options.map(opt => opt.display);
+        }
+        
+        return context;
       }
 
       case 'coordinator': {
@@ -52,9 +73,17 @@ export class ContextBuilder {
       }
 
       case 'parser': {
-        return {
+        const trip = await db.getTrip(tripId);
+        const context = {
           flights: await db.getFlights(tripId),
         };
+        
+        // Add date availability context for collection phase
+        if (trip && (trip.stage === 'collecting_dates' || trip.stage === 'planning')) {
+          context.dateAvailability = await db.getDateAvailability(tripId);
+        }
+        
+        return context;
       }
 
       default:
@@ -64,6 +93,7 @@ export class ContextBuilder {
 }
 
 export const contextBuilder = new ContextBuilder();
+
 
 
 

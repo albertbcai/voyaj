@@ -4,54 +4,685 @@ import { twilioClient } from '../utils/twilio.js';
 import { emitEvent, EVENTS } from '../state/eventEmitter.js';
 import { checkStateTransitions } from '../state/stateMachine.js';
 import { parseDateRange } from '../utils/helpers.js';
+import { callClaude } from '../utils/claude.js';
 
 export class VotingAgent extends BaseAgent {
+  constructor() {
+    super('Voting', '🗳️');
+  }
+
   async handle(context, message) {
+    const { trip, member } = context;
+    
+    this.logEntry('handle', context, message);
+    
+    try {
+
+    // Handle different stages
+    if (trip.stage === 'collecting_destinations' || trip.stage === 'planning') {
+      // Check if message looks like a destination suggestion first
+      // If not, skip without checking membership (let coordinator handle casual chat)
+      const suggestion = message.body.trim();
+      const lowerSuggestion = suggestion.toLowerCase();
+      const isCasualMessage = lowerSuggestion === 'ok' || 
+                             lowerSuggestion === 'sounds good' ||
+                             lowerSuggestion.includes('already in') ||
+                             lowerSuggestion.includes('wait') ||
+                             lowerSuggestion.includes('confused') ||
+                             lowerSuggestion.includes('what') ||
+                             lowerSuggestion.length < 2 ||
+                             false; // Allow longer messages - people might suggest multiple destinations
+      
+      if (isCasualMessage) {
+        console.log(`   🗳️  Voting: Skipping casual message, not a destination suggestion`);
+        return { success: false, skip: true };
+      }
+
+      // Now check membership only if it looks like a real suggestion
+      if (!member) {
+        console.log(`   🗳️  Voting: Member not found, but message looks like destination - routing to coordinator for member join`);
+        // Don't send a message here - let coordinator handle it properly
+        return { success: false, skip: true };
+      }
+
+      this.log('info', 'Collecting destination suggestion');
+      const result1 = await this.handleDestinationSuggestion(context, message);
+      this.logExit('handle', result1);
+      return result1;
+    }
+
+    if (trip.stage === 'voting_destination' || trip.stage === 'voting_dates') {
+      this.log('info', `Processing vote - poll: ${trip.stage}`);
+      const result2 = await this.handleVote(context, message);
+      this.logExit('handle', result2);
+      return result2;
+    }
+
+    // Fallback
+    this.log('info', 'No matching stage, skipping');
+    const result = { success: false, skip: true };
+    this.logExit('handle', result);
+    return result;
+    } catch (error) {
+      await this.logError(error, context, message, { method: 'handle' });
+      throw error;
+    }
+  }
+
+  async handleDestinationSuggestion(context, message) {
+    const { trip, member, destinationSuggestions } = context;
+    const suggestion = message.body.trim();
+
+    // Skip very short or obviously non-suggestion messages
+    // (This check is redundant now since orchestrator filters, but keep for safety)
+    const lowerSuggestion = suggestion.toLowerCase();
+    const isCasualMessage = lowerSuggestion === 'ok' || 
+                           lowerSuggestion === 'sounds good' ||
+                           lowerSuggestion.includes('already in') ||
+                           lowerSuggestion.includes('wait') ||
+                           lowerSuggestion.includes('confused') ||
+                           (lowerSuggestion.includes('what') && lowerSuggestion.length < 30) ||
+                           lowerSuggestion.length < 2;
+    
+    if (isCasualMessage) {
+      console.log(`   🗳️  Voting: Skipping casual message, not a suggestion`);
+      return { success: false, skip: true };
+    }
+
+    // Check if this is a vague preference (not a specific destination) - extract and store
+    const isVaguePreference = await this.isVagueDestinationPreference(suggestion);
+    if (isVaguePreference.isVague) {
+      console.log(`   🗳️  Voting: Detected vague preference, extracting and storing`);
+      // Store as preference
+      const { addTripPreference } = await import('../db/queries.js');
+      await addTripPreference(
+        trip.id,
+        member.id,
+        'destination_criteria',
+        isVaguePreference.preferenceText,
+        suggestion
+      );
+      
+      // Return output that responder can format to acknowledge and ask for specifics
+      return {
+        success: true,
+        output: {
+          type: 'vague_preference_detected',
+          preferenceType: 'destination_criteria',
+          preferenceText: isVaguePreference.preferenceText,
+          originalMessage: suggestion,
+          sendTo: 'individual',
+        },
+      };
+    }
+
+    // Extract multiple destinations from the message (AI-powered)
+    const destinations = await this.extractDestinations(suggestion);
+    
+    let savedCount = 0;
+    let alreadySuggested = false;
+    
+    // Save each destination suggestion
+    for (const dest of destinations) {
+      try {
+        const normalized = await this.normalizeDestination(dest, context.allMembers);
+        if (!normalized || normalized.length === 0) continue;
+        
+        // Check if this specific destination was already suggested by this member
+        const alreadySuggestedThis = destinationSuggestions?.some(s => 
+          s.member_id === member.id && s.destination.toLowerCase() === normalized.toLowerCase()
+        );
+        
+        if (!alreadySuggestedThis) {
+          await db.createDestinationSuggestion(trip.id, member.id, normalized);
+          console.log(`   🗳️  Voting: Destination suggestion recorded: "${normalized}"`);
+          savedCount++;
+        } else {
+          alreadySuggested = true;
+        }
+      } catch (error) {
+        // Skip if it's a name (not a destination) or other error
+        if (error.message === 'NAME_NOT_DESTINATION') {
+          console.log(`   🗳️  Voting: Skipping "${dest}" - looks like a name, not a destination`);
+        } else {
+          console.log(`   🗳️  Voting: Error normalizing "${dest}":`, error.message);
+        }
+        continue;
+      }
+    }
+    
+    if (savedCount === 0 && destinations.length > 0) {
+      alreadySuggested = true; // All destinations were already suggested
+    }
+
+    // Check if ready to transition to voting
+    const suggestionCount = await db.getDestinationSuggestionCount(trip.id);
+    const memberCount = context.allMembers.length;
+
+    if (suggestionCount >= memberCount) {
+      console.log(`   🗳️  Voting: All suggestions collected, transitioning to voting`);
+      return await this.startDestinationVoting(context);
+    }
+
+    // Get pending members for status update
+    const pending = context.allMembers
+      .filter(m => !destinationSuggestions?.some(s => s.member_id === m.id))
+      .map(m => m.name);
+    
+    const isNewSuggestion = !destinationSuggestions?.some(s => s.member_id === member.id);
+    
+    await checkStateTransitions(trip.id);
+
+    // Return structured output for responder to format
+    const savedDestinations = destinations.filter(d => d && d.length > 0);
+    return {
+      success: true,
+      output: {
+        type: 'destination_suggested',
+        destinations: savedDestinations,
+        savedCount,
+        alreadySuggested,
+        suggestionCount,
+        memberCount,
+        pendingMembers: isNewSuggestion && pending.length > 0 ? pending : null,
+        sendTo: 'individual', // Individual acknowledgment, group status if pending
+      },
+    };
+  }
+
+  async startDestinationVoting(context) {
+    const { trip } = context;
+    
+    // Get all suggestions
+    const suggestions = await db.getDestinationSuggestions(trip.id);
+    
+    // Consolidate duplicates
+    const uniqueDestinations = this.consolidateSuggestions(suggestions);
+    
+    if (uniqueDestinations.length === 1) {
+      // Only one unique destination - lock it immediately
+      await db.updateTrip(trip.id, {
+        destination: uniqueDestinations[0],
+        stage: 'destination_set',
+        stage_entered_at: new Date(),
+      });
+      // Trigger state transition - state machine action will send the next prompt
+      await checkStateTransitions(trip.id);
+      return {
+        success: true,
+        output: {
+          type: 'poll_completed',
+          pollType: 'destination',
+          winner: uniqueDestinations[0],
+          voteCount: context.allMembers.length,
+          unanimous: true,
+          sendTo: 'group',
+        },
+      };
+    }
+
+    // Present voting options - transition to voting stage
+    await db.updateTrip(trip.id, {
+      stage: 'voting_destination',
+      stage_entered_at: new Date(),
+    });
+    await checkStateTransitions(trip.id);
+
+    const memberCount = context.allMembers.length;
+    const majorityThreshold = Math.ceil(memberCount * 0.6);
+
+    return {
+      success: true,
+      output: {
+        type: 'poll_started',
+        pollType: 'destination',
+        options: uniqueDestinations,
+        memberCount,
+        majorityThreshold,
+        sendTo: 'group',
+      },
+    };
+  }
+
+  async handleVote(context, message) {
     const { trip, member, currentPoll, existingVotes } = context;
 
-    if (!member) {
-      await twilioClient.sendSMS(message.from, 'You need to join the trip first. Reply with your name.');
-      return { success: false };
+    if (!currentPoll) {
+      return { success: false, skip: true };
     }
 
     const choice = message.body.trim();
+    console.log(`   🗳️  Voting: Processing vote - poll: ${currentPoll.type}, choice: "${choice}"`);
     
-    // Skip very short or obviously non-vote messages
-    if (choice.length < 2 || choice.toLowerCase() === 'ok' || choice.toLowerCase() === 'sounds good' || 
-        choice.toLowerCase() === 'excited' || choice.toLowerCase() === 'me too') {
-      // This is probably casual conversation, not a vote
+    // Parse numeric vote (1, 2, 3) or natural language (AI-powered)
+    const parsedVote = await this.parseVote(choice, currentPoll.type, context);
+    
+    if (!parsedVote) {
+      console.log(`   🗳️  Voting: Could not parse vote, skipping`);
       return { success: false, skip: true };
     }
 
     // Record vote
-    await db.createVote(trip.id, currentPoll.type, member.id, choice);
+    await db.createVote(trip.id, currentPoll.type, member.id, parsedVote);
+    console.log(`   🗳️  Voting: Vote recorded for ${member.name}: "${parsedVote}"`);
 
     // Check if member already voted
-    const alreadyVoted = existingVotes.some(v => v.member_id === member.id);
-
-    if (alreadyVoted) {
-      await twilioClient.sendSMS(message.from, `Updated your vote to: ${choice} ✓`);
-    } else {
-      await twilioClient.sendSMS(message.from, `Got it! Voted for: ${choice} ✓`);
-    }
+    const alreadyVoted = existingVotes?.some(v => v.member_id === member.id);
 
     // Check if poll should close
     const totalMembers = context.allMembers.length;
     const totalVotes = await db.getVoteCount(trip.id, currentPoll.type);
+    const majorityThreshold = Math.ceil(totalMembers * 0.6);
+    const votesNeeded = Math.max(0, majorityThreshold - totalVotes);
 
-    const majorityVoted = totalVotes >= Math.ceil(totalMembers * 0.6);
+    console.log(`   🗳️  Voting: Progress - ${totalVotes}/${totalMembers} votes (need ${majorityThreshold} for majority)`);
+
+    const majorityVoted = totalVotes >= majorityThreshold;
 
     if (majorityVoted) {
+      console.log(`   🗳️  Voting: Majority reached! Closing poll...`);
       return await this.closePoll(context);
     }
 
-    // Show status
+    // Get pending and confirmed voters
     const pendingVoters = this.getPendingVoters(context, existingVotes);
-    await this.sendToGroup(trip.id, `${totalVotes}/${totalMembers} voted. Still waiting on: ${pendingVoters}`);
+    const allVotes = await db.getVotes(trip.id, currentPoll.type);
+    const confirmedVoters = context.allMembers
+      .filter(m => allVotes.some(v => v.member_id === m.id))
+      .map(m => m.name);
 
     emitEvent(EVENTS.DESTINATION_VOTED, { tripId: trip.id, pollType: currentPoll.type });
 
-    return { success: true };
+    // Return structured output
+    return {
+      success: true,
+      output: {
+        type: 'vote_recorded',
+        choice: parsedVote,
+        alreadyVoted,
+        voteCount: totalVotes,
+        totalMembers,
+        votesNeeded,
+        majorityThreshold,
+        confirmedVoters,
+        pendingVoters: pendingVoters.length > 0 ? pendingVoters : null,
+        sendTo: 'individual', // Individual acknowledgment, group status if pending
+      },
+    };
+  }
+
+  async parseVote(choice, pollType, context) {
+    // Get options based on poll type
+    let options = [];
+    if (pollType === 'destination') {
+      const suggestions = context.destinationSuggestions || [];
+      options = this.consolidateSuggestions(suggestions);
+    } else if (pollType === 'dates') {
+      options = context.dateOptions || [];
+    }
+    
+    if (options.length === 0) {
+      console.warn(`   🗳️  Voting: No options available for poll type ${pollType}`);
+      return null;
+    }
+    
+    // Try to parse as numeric vote first (1, 2, 3)
+    const numericMatch = choice.match(/\b(\d+)\b/);
+    if (numericMatch) {
+      const optionNumber = parseInt(numericMatch[1], 10);
+      
+      if (optionNumber >= 1 && optionNumber <= options.length) {
+        const selectedOption = options[optionNumber - 1];
+        
+        // If message has extra text (like "1\n\nTokyo all the way!!"), use AI to confirm
+        // Otherwise, just return the option name
+        if (choice.trim() !== numericMatch[1] && choice.length > 5) {
+          // Message has extra text - use AI to extract the actual choice
+          try {
+            const prompt = `User sent this message in response to a poll: "${choice}"
+
+Poll options:
+${options.map((opt, idx) => `${idx + 1}. ${opt}`).join('\n')}
+
+The message contains the number "${optionNumber}" which corresponds to option ${optionNumber}: "${selectedOption}".
+
+Extract the actual vote choice. Reply with JSON only:
+{
+  "isVote": true or false,
+  "intent": "vote" or "complaint" or "question" or "other",
+  "optionName": "${selectedOption}" or null
+}
+
+If the user is voting for option ${optionNumber} (${selectedOption}), set isVote to true and optionName to "${selectedOption}".
+If they're complaining, asking a question, or not voting, set isVote to false.`;
+
+            const response = await callClaude(prompt, { maxTokens: 100 });
+            const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+            
+            if (parsed.isVote && parsed.optionName) {
+              // Validate that the option name matches one of the actual options
+              const matchingOption = options.find(opt => opt.toLowerCase() === parsed.optionName.toLowerCase());
+              if (matchingOption) {
+                return matchingOption; // Return the actual option name from the list
+              }
+            }
+            
+            // AI says it's not a vote, or option doesn't match
+            console.log(`   🗳️  Voting: AI determined message is not a vote (intent: ${parsed.intent})`);
+            return null;
+          } catch (error) {
+            // AI parsing failed - fallback to using the number
+            console.warn(`   🗳️  Voting: AI parsing failed, using numeric vote:`, error.message);
+            return selectedOption;
+          }
+        }
+        
+        // Clean numeric vote - return the option name
+        return selectedOption;
+      }
+    }
+
+    // No number found - use AI to determine if it's a natural language vote
+    try {
+      const prompt = `User sent this message in response to a poll: "${choice}"
+
+Poll options:
+${options.map((opt, idx) => `${idx + 1}. ${opt}`).join('\n')}
+
+Is this a valid vote? Reply with JSON only:
+{
+  "isVote": true or false,
+  "intent": "vote" or "complaint" or "question" or "other",
+  "optionName": "option name from list" or null
+}
+
+If they're voting, set isVote to true and optionName to the exact option name from the list above.
+If they're complaining (e.g., "This doesn't look right"), asking a question, or not voting, set isVote to false.`;
+
+      const response = await callClaude(prompt, { maxTokens: 150 });
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      
+      if (parsed.isVote && parsed.optionName) {
+        // Validate that the option name matches one of the actual options
+        const matchingOption = options.find(opt => opt.toLowerCase() === parsed.optionName.toLowerCase());
+        if (matchingOption) {
+          this.logAICall('parseVote (natural language)', choice, parsed.optionName);
+          return matchingOption;
+        }
+      }
+      
+      // Not a valid vote
+      this.log('info', `AI determined message is not a vote (intent: ${parsed.intent})`);
+      this.logAICall('parseVote (natural language)', choice, parsed, null);
+      return null;
+    } catch (error) {
+      // AI parsing failed - reject the vote
+      this.logAICall('parseVote (natural language)', choice, null, error);
+      this.log('warn', `AI parsing failed, rejecting vote: ${error.message}`);
+      return null;
+    }
+  }
+
+  async isVagueDestinationPreference(text) {
+    // Use AI to detect if this is a vague preference (criteria) vs specific destination
+    const prompt = `Is this message a vague destination preference/criteria (not a specific place), or a specific destination?
+
+Examples of vague preferences:
+- "somewhere with good food"
+- "beach destination"
+- "somewhere warm"
+- "good food + beach"
+- "taco situation is important"
+- "places with good food? like i know we're doing beach"
+
+Examples of specific destinations:
+- "Tokyo"
+- "Mexico"
+- "Bali"
+- "Portugal"
+- "Cancun"
+
+Message: "${text}"
+
+Reply with JSON only:
+{
+  "isVague": true or false,
+  "preferenceText": "good food + beach" or null
+}
+
+If vague, extract the preference criteria. If specific destination, set isVague to false.`;
+
+    try {
+      const { callClaude } = await import('../utils/claude.js');
+      const response = await callClaude(prompt, { maxTokens: 100 });
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      
+      if (parsed.isVague && parsed.preferenceText) {
+        return {
+          isVague: true,
+          preferenceText: parsed.preferenceText,
+        };
+      }
+      
+      return { isVague: false, preferenceText: null };
+    } catch (error) {
+      console.error('Error detecting vague preference:', error);
+      // Fallback: check for common vague patterns
+      const vaguePatterns = [
+        /\b(somewhere|place|places|destination|location)\s+(with|that|where)\s+/i,
+        /\b(good|great|nice|amazing)\s+(food|beach|weather|culture|nightlife)/i,
+        /\b(beach|food|culture|adventure|relaxing)\s+(destination|place|spot)/i,
+      ];
+      
+      if (vaguePatterns.some(pattern => pattern.test(text))) {
+        return {
+          isVague: true,
+          preferenceText: text.trim(),
+        };
+      }
+      
+      return { isVague: false, preferenceText: null };
+    }
+  }
+
+  async extractDestinations(text) {
+    // Use AI to extract destinations from natural language
+    try {
+      const prompt = `Extract all travel destinations (cities, countries, or regions) from this message: "${text}"
+
+Examples:
+- "Thailand, Japan, or maybe Europe" → ["Thailand", "Japan", "Europe"]
+- "Tokyo or Shanghai" → ["Tokyo", "Shanghai"]
+- "I'm thinking Japan" → ["Japan"]
+- "Am a overruled then" → [] (no destinations)
+
+Reply with JSON array only:
+["destination1", "destination2", ...]
+
+If no destinations found, return empty array [].`;
+
+      const response = await callClaude(prompt, { maxTokens: 150 });
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Filter out empty strings and validate
+        return parsed.filter(dest => dest && typeof dest === 'string' && dest.trim().length > 0 && dest.trim().length < 100);
+      }
+      
+      return [];
+    } catch (error) {
+      // AI extraction failed - fallback to regex-based extraction
+      console.warn(`   🗳️  Voting: AI destination extraction failed, using fallback:`, error.message);
+      
+      const destinations = [];
+      const separators = [',', ' or ', ' and ', ' maybe ', ' perhaps ', ' or maybe ', ' and maybe '];
+      let remaining = text.trim();
+      
+      // Try splitting by separators
+      for (const sep of separators) {
+        if (remaining.toLowerCase().includes(sep.toLowerCase())) {
+          const parts = remaining.split(new RegExp(sep, 'i'));
+          for (const part of parts) {
+            const cleaned = part.trim().replace(/^(maybe|perhaps|or|and)\s+/i, '').trim();
+            if (cleaned.length > 1 && cleaned.length < 100) {
+              destinations.push(cleaned);
+            }
+          }
+          break;
+        }
+      }
+      
+      // If no separators found, treat entire message as one destination
+      if (destinations.length === 0) {
+        const cleaned = text.trim();
+        if (cleaned.length > 1 && cleaned.length < 100) {
+          destinations.push(cleaned);
+        }
+      }
+      
+      return destinations;
+    }
+  }
+
+  async normalizeDestination(destination, allMembers = []) {
+    const trimmed = destination.trim();
+    if (trimmed.length === 0) {
+      throw new Error('NOT_A_DESTINATION');
+    }
+    
+    // Quick rule-based checks first (no AI needed)
+    const memberNames = allMembers.map(m => m.name.toLowerCase());
+    const lowerDestination = trimmed.toLowerCase();
+    
+    // Reject if it matches a member name exactly
+    if (memberNames.includes(lowerDestination)) {
+      throw new Error('NAME_NOT_DESTINATION');
+    }
+    
+    // Reject obvious non-destinations (common phrases, first-person statements)
+    const obviousNonDestinations = [
+      /\b(i|i'm|i am|we|we're|we are|you|you're|you are|they|they're|they are)\b/i,
+      /\b(am a|this doesn|doesn't|look like|right vote|wrong|overruled)\b/i,
+      /\b(ok|sounds good|yeah|yes|no|maybe|perhaps|wait|what|how|why|when|where)\b/i,
+    ];
+    
+    if (obviousNonDestinations.some(pattern => pattern.test(trimmed))) {
+      throw new Error('NOT_A_DESTINATION');
+    }
+    
+    // Use AI to validate if it's actually a destination
+    try {
+      const prompt = `Is "${trimmed}" a travel destination (city, country, or region)?
+
+Examples:
+- "Tokyo" → yes (city)
+- "Japan" → yes (country)
+- "Am a overruled then" → no (not a destination)
+- "This doesn't look right" → no (not a destination)
+- "I'm flexible" → no (not a destination)
+
+Reply with JSON only:
+{
+  "isDestination": true or false,
+  "normalizedName": "Tokyo" or null
+}
+
+If it's a destination, provide a clean, normalized name (e.g., "Tokyo" not "tokyo" or "TOKYO"). If not, set isDestination to false and normalizedName to null.`;
+
+      const response = await callClaude(prompt, { maxTokens: 100 });
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      
+      if (!parsed.isDestination || !parsed.normalizedName) {
+        throw new Error('NOT_A_DESTINATION');
+      }
+      
+      return parsed.normalizedName;
+    } catch (error) {
+      // If AI fails or says it's not a destination, reject it
+      if (error.message === 'NOT_A_DESTINATION' || error.message === 'NAME_NOT_DESTINATION') {
+        throw error;
+      }
+      
+      // AI call failed - use fallback: reject if it looks suspicious
+      console.warn(`   🗳️  Voting: AI validation failed for "${trimmed}", using fallback:`, error.message);
+      
+      // Fallback: reject if it contains suspicious patterns
+      if (obviousNonDestinations.some(pattern => pattern.test(trimmed))) {
+        throw new Error('NOT_A_DESTINATION');
+      }
+      
+      // Last resort: capitalize first letter (but log warning)
+      console.warn(`   🗳️  Voting: Using fallback normalization for "${trimmed}"`);
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    }
+  }
+
+  consolidateSuggestions(suggestions) {
+    // Simple deduplication: case-insensitive matching
+    const seen = new Set();
+    const unique = [];
+    
+    for (const suggestion of suggestions) {
+      const normalized = suggestion.destination.toLowerCase().trim();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        unique.push(suggestion.destination); // Keep original capitalization
+      }
+    }
+    
+    return unique;
+  }
+
+  createVotingMessage(options, type, memberCount = null, majorityThreshold = null) {
+    const emojiMap = {
+      'Portugal': '🇵🇹',
+      'Greece': '🇬🇷',
+      'Italy': '🇮🇹',
+      'Spain': '🇪🇸',
+      'France': '🇫🇷',
+      'Japan': '🇯🇵',
+      'Tokyo': '🗾',
+      'Bali': '🏝️',
+      'Iceland': '🧊',
+    };
+
+    // Calculate threshold if not provided
+    if (!majorityThreshold && memberCount) {
+      majorityThreshold = Math.ceil(memberCount * 0.6);
+    }
+
+    let message = `🗳️ TIME TO VOTE! 🗳️\n\n`;
+    
+    if (memberCount && majorityThreshold) {
+      message += `We have ${memberCount} member${memberCount > 1 ? 's' : ''}. Vote by replying with JUST THE NUMBER:\n\n`;
+    } else {
+      message += `Vote by replying with JUST THE NUMBER:\n\n`;
+    }
+
+    options.forEach((option, index) => {
+      const number = index + 1;
+      const emoji = type === 'destination' 
+        ? (emojiMap[option] || '✈️')
+        : '📅';
+      message += `${number}️⃣ ${emoji} ${option}\n`;
+    });
+
+    message += `\n📊 Voting Rules:\n`;
+    if (memberCount && majorityThreshold) {
+      message += `• Need ${majorityThreshold} out of ${memberCount} votes (60% majority) to lock it in\n`;
+    } else {
+      message += `• Need 60% majority to lock it in\n`;
+    }
+    message += `• Reply with just the number (e.g., "1" for ${options[0]})\n`;
+    message += `• Poll closes when majority reached or after 48 hours\n\n`;
+    message += `Example: Reply "1" to vote for ${options[0]}`;
+    
+    return message;
   }
 
   async closePoll(context) {
@@ -65,25 +696,96 @@ export class VotingAgent extends BaseAgent {
     }
 
     // Get winner (most votes)
-    const winner = results[0].choice;
+    let winner = results[0].choice;
     const voteCount = parseInt(results[0].count, 10);
 
-    // Update trip
+    // Validate winner against actual poll options (AI-powered)
     if (currentPoll.type === 'destination') {
+      const suggestions = await db.getDestinationSuggestions(trip.id);
+      const options = this.consolidateSuggestions(suggestions);
+      
+      // Check if winner matches an actual option
+      const matchingOption = options.find(opt => opt.toLowerCase() === winner.toLowerCase());
+      
+      if (!matchingOption) {
+        // Winner doesn't match any option - use AI to extract the correct choice
+        console.warn(`   🗳️  Voting: Winner "${winner}" doesn't match any option, using AI to extract correct choice`);
+        try {
+          const prompt = `Vote result shows winner as: "${winner}"
+
+But the actual poll options were:
+${options.map((opt, idx) => `${idx + 1}. ${opt}`).join('\n')}
+
+The stored winner doesn't match any option. What was the actual intended choice? Reply with JSON only:
+{
+  "optionName": "exact option name from the list above" or null
+}
+
+Return the exact option name that the user intended to vote for.`;
+
+          const response = await callClaude(prompt, { maxTokens: 100 });
+          const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          const parsed = JSON.parse(cleaned);
+          
+          if (parsed.optionName) {
+            const correctedOption = options.find(opt => opt.toLowerCase() === parsed.optionName.toLowerCase());
+            if (correctedOption) {
+              winner = correctedOption;
+              console.log(`   🗳️  Voting: Corrected winner from "${results[0].choice}" to "${winner}"`);
+            } else {
+              // AI's suggestion doesn't match either - use most common valid option
+              console.warn(`   🗳️  Voting: AI suggestion "${parsed.optionName}" doesn't match, using most common valid option`);
+              // Find the most common vote that matches an actual option
+              for (const result of results) {
+                const validOption = options.find(opt => opt.toLowerCase() === result.choice.toLowerCase());
+                if (validOption) {
+                  winner = validOption;
+                  console.log(`   🗳️  Voting: Using most common valid option: "${winner}"`);
+                  break;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // AI correction failed - use most common valid option
+          console.warn(`   🗳️  Voting: AI correction failed, using most common valid option:`, error.message);
+          for (const result of results) {
+            const validOption = options.find(opt => opt.toLowerCase() === result.choice.toLowerCase());
+            if (validOption) {
+              winner = validOption;
+              console.log(`   🗳️  Voting: Using most common valid option: "${winner}"`);
+              break;
+            }
+          }
+        }
+      } else {
+        // Winner matches an option - use the exact option name from the list
+        winner = matchingOption;
+      }
+      
       await db.updateTrip(trip.id, {
         destination: winner,
-        stage: 'destination_set',
+        stage: 'destination_set', // State machine will check if dates are set and transition appropriately
         stage_entered_at: new Date(),
       });
 
-      await this.sendToGroup(trip.id, `${winner} wins with ${voteCount} votes! 🎉\n\nNow let's pick dates. When can everyone go?`);
-
-      // Transition to date voting
-      await db.updateTrip(trip.id, { stage: 'voting_dates', stage_entered_at: new Date() });
-
-      emitEvent(EVENTS.STAGE_CHANGED, { tripId: trip.id, from: 'voting_destination', to: 'destination_set' });
+      // Trigger state transition - state machine action will send the next prompt
+      await checkStateTransitions(trip.id);
+      
+      return {
+        success: true,
+        output: {
+          type: 'poll_completed',
+          pollType: 'destination',
+          winner,
+          voteCount,
+          sendTo: 'group',
+        },
+      };
     } else if (currentPoll.type === 'dates') {
-      // Parse date from winner choice
+      // For dates, winner is already a formatted date string from the options
+      // We need to extract the actual dates from it
+      // The winner will be something like "July 15-22" or a date range string
       const dates = parseDateRange(winner);
 
       if (dates.start && dates.end) {
@@ -94,15 +796,28 @@ export class VotingAgent extends BaseAgent {
           stage_entered_at: new Date(),
         });
 
-        await this.sendToGroup(trip.id, `${winner} locked in! ✓\n\nText me when you book your flights. ✈️`);
-
-        // Transition to planning
-        await db.updateTrip(trip.id, { stage: 'planning', stage_entered_at: new Date() });
-
-        emitEvent(EVENTS.STAGE_CHANGED, { tripId: trip.id, from: 'voting_dates', to: 'dates_set' });
+        // Trigger state transition - state machine action will send the next prompt
+        await checkStateTransitions(trip.id);
+        
+        return {
+          success: true,
+          output: {
+            type: 'poll_completed',
+            pollType: 'dates',
+            winner,
+            voteCount,
+            sendTo: 'group',
+          },
+        };
       } else {
-        await this.sendToGroup(trip.id, `Couldn't parse dates from "${winner}". Please try again with format like "March 15-22".`);
-        return { success: false };
+        return {
+          success: false,
+          output: {
+            type: 'error',
+            message: `Couldn't parse dates from "${winner}". Please try again.`,
+            sendTo: 'group',
+          },
+        };
       }
     }
 
