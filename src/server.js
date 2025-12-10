@@ -147,8 +147,50 @@ app.get('/test/responses/:phoneNumber/latest', (req, res) => {
   res.json({ message });
 });
 
+// Get ALL messages for a group chat (single source of truth - database)
+// This ensures UI, personas, and bot all see the same messages in the same order
+app.get('/test/messages/group/:groupId', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    // Find trip by group ID
+    const trip = await db.getTripByGroupChatId(groupId);
+    if (!trip) {
+      return res.json({ messages: [] });
+    }
+    
+    // Get ALL messages from database (user + bot) in chronological order
+    const messages = await db.getRecentMessages(trip.id, 200); // Get enough for full conversation
+    
+    // Get members to map phone numbers to names
+    const members = await db.getMembers(trip.id);
+    const memberMap = new Map(members.map(m => [m.phone_number, m.name]));
+    
+    // Format messages for UI
+    const formattedMessages = messages.map(msg => {
+      const isBot = msg.from_phone === 'bot' || msg.source === 'bot';
+      const senderName = isBot ? 'Bot' : (memberMap.get(msg.from_phone) || msg.from_phone);
+      
+      return {
+        id: msg.id,
+        text: msg.body,
+        sender: senderName,
+        timestamp: msg.received_at || msg.created_at,
+        isBot: isBot,
+        fromPhone: msg.from_phone
+      };
+    });
+    
+    res.json({ messages: formattedMessages });
+  } catch (error) {
+    console.error(`   ❌ Messages endpoint [${groupId}]: Error:`, error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get latest bot message for a group chat (by group ID)
 // Cache last result per group to reduce logging noise
+// NOTE: This is kept for backward compatibility, but UI should use /test/messages/group/:groupId instead
 const groupEndpointCache = new Map();
 
 app.get('/test/responses/group/:groupId/latest', async (req, res) => {
@@ -692,8 +734,9 @@ async function findOrCreateTrip(phone, groupChatId) {
 
 // Start server
 const PORT = config.server.port;
-app.listen(PORT, async () => {
-  console.log(`🚀 Voyaj server running on port ${PORT}`);
+const HOST = '127.0.0.1'; // Bind to localhost to avoid permission issues
+app.listen(PORT, HOST, async () => {
+  console.log(`🚀 Voyaj server running on http://${HOST}:${PORT}`);
   console.log(`📱 Test endpoint: POST http://localhost:${PORT}/test/sms`);
   console.log(`📊 Health check: GET http://localhost:${PORT}/health`);
   if (config.server.env === 'development') {

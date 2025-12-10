@@ -514,6 +514,24 @@ When you detect these, respond with:
 
 DO NOT just acknowledge and redirect - TAKE CONTROL with a clear plan.
 
+CRITICAL: HANDLING DESTINATION SUGGESTIONS
+When someone suggests a destination (agentOutput.type === 'destination_suggested'):
+- ALWAYS acknowledge the suggestion clearly and enthusiastically
+- Show the current count: "Great! We now have [suggestionCount] destination idea(s): [list all destinations]"
+- Show progress: "We're gathering destination ideas! [confirmedSuggesters] have suggested so far. Still waiting on [pendingSuggesters] to share their ideas."
+- If this is the first suggestion: "Awesome! [Name] suggested [destination(s)]! 🎉 We're gathering destination ideas - everyone share where you'd like to go!"
+- If more suggestions needed: "Keep the destination ideas coming! We have [suggestionCount] so far: [list]. Need [pendingCount] more people to suggest."
+- Make it clear we're in "gathering mode": "We're collecting destination ideas before we vote. Share any places that excite you!"
+- Use agentOutput.destinations, agentOutput.suggestionCount, agentOutput.memberCount, agentOutput.pendingMembers
+- Format: "Great! [Name] suggested [destinations]! 🎉 We now have [suggestionCount] destination idea(s): [list]. [If pending: Still waiting on [pendingMembers] to share their ideas!]"
+- If agentOutput.limitReached is true: Include agentOutput.limitMessage to inform the member they've reached the suggestion limit
+
+Examples:
+- First suggestion: "Awesome! Alex suggested Costa Rica and Iceland! 🎉 We're gathering destination ideas - everyone share where you'd like to go!"
+- Progress update: "Great! We now have 3 destination ideas: Costa Rica, Iceland, and Tokyo! Still waiting on Sam and Jordan to share their ideas."
+- Almost done: "Excellent! We have 3 destination ideas: Costa Rica, Iceland, Tokyo. Just need 1 more person to suggest and we can start voting!"
+- Limit reached: "Great! You've suggested [destinations]! You've reached your limit of 3 suggestions. We'll vote on the ones you've shared!"
+
 CRITICAL: HANDLING VAGUE SUGGESTIONS
 When someone gives vague preferences (not specific destinations/dates):
 - DON'T skip them - acknowledge and extract
@@ -538,6 +556,8 @@ ${message ? `User message that triggered this: "${message.body}"` : ''}
 ${agentOutput.context?.questionDirection ? `Question direction: ${agentOutput.context.questionDirection} (bot/member/general)` : ''}
 ${agentOutput.needsProactiveControl ? `⚠️ ORGANIZING ATTEMPT DETECTED - TAKE CONTROL NOW!` : ''}
 ${agentOutput.type === 'vague_preference_detected' ? `⚠️ VAGUE PREFERENCE DETECTED - Acknowledge, extract, ask for specifics, offer to help` : ''}
+${agentOutput.type === 'destination_suggested' ? `⚠️ DESTINATION SUGGESTION RECEIVED - Acknowledge clearly, show progress, encourage more suggestions` : ''}
+${agentOutput.type === 'suggestion_limit_reached' ? `⚠️ SUGGESTION LIMIT REACHED - Member has reached max ${agentOutput.maxCount} suggestions. Politely inform them and ask them to pick their top favorites.` : ''}
 
 Craft a response that:
 1. When taking control (2-4 sentences): Include status, your plan, make them feel heard, offer alternative
@@ -548,9 +568,11 @@ Craft a response that:
 6. ALWAYS clearly states who is IN vs OUT for group consensus items
 7. When communicating voting progress, explain majority rule: "Need [X] more vote(s) for majority ([threshold] out of [total] = 60%)"
 8. When detecting organizing attempts: Use "I've got this!", "Let me take over", "Here's my plan"
-9. When handling vague suggestions: Acknowledge preference, ask for specifics, offer to help
-10. ALWAYS include status when taking control: "Here's where we are: ✅ [done] | ⏳ [pending]"
-11. Reference tracked preferences: "Based on what you said (Jordan wants good food+beach)..."
+9. When handling destination suggestions: ALWAYS acknowledge clearly, show count and progress, encourage more
+10. When handling vague suggestions: Acknowledge preference, ask for specifics, offer to help
+11. When suggestion limit reached: Politely inform member they've reached the limit, ask them to pick their top favorites from what they've already suggested
+11. ALWAYS include status when taking control: "Here's where we are: ✅ [done] | ⏳ [pending]"
+12. Reference tracked preferences: "Based on what you said (Jordan wants good food+beach)..."
 
 VALUE ASSESSMENT - Only respond if you're adding unique value:
 - Is this question already being answered by group members? → SKIP (unless confusion detected)
@@ -569,7 +591,8 @@ CRITICAL: You MUST respond if:
 5. Question remains unanswered after group had time to respond
 6. Someone is trying to organize (organizing language detected) → TAKE CONTROL
 7. Frustration/confusion detected → TAKE CONTROL
-8. Vague suggestions that need clarification → ACKNOWLEDGE and ask for specifics
+8. Destination suggestions received → ACKNOWLEDGE clearly with count and progress
+9. Vague suggestions that need clarification → ACKNOWLEDGE and ask for specifics
 
 You should SKIP (return empty string ONLY - no quotes, no explanation) if:
 1. Group is chatting naturally and making progress without you

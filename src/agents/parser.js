@@ -29,7 +29,7 @@ export class ParserAgent extends BaseAgent {
     }
 
     // Handle date availability collection
-    if (trip.stage === 'collecting_dates' || trip.stage === 'planning') {
+    if (trip.stage === 'collecting_dates' || trip.stage === 'planning' || trip.stage === 'destination_set') {
       console.log(`   ✈️  Parser: Collecting date availability`);
       return await this.handleDateAvailability(context, message);
     }
@@ -215,12 +215,31 @@ Only JSON, nothing else.`;
     const options = findOverlappingDates(availability);
     
     if (options.length === 0) {
+      // Build conflict message showing each member's availability
+      const conflictDetails = ['Hmm, no overlapping dates found. 😕\n\nHere\'s what everyone shared:'];
+      
+      for (const avail of availability) {
+        let dateText;
+        if (avail.is_flexible) {
+          dateText = 'flexible';
+        } else if (avail.start_date && avail.end_date) {
+          dateText = this.formatDateRange(avail.start_date, avail.end_date);
+        } else {
+          dateText = 'not specified';
+        }
+        
+        const memberName = avail.member_name || 'Unknown';
+        conflictDetails.push(`• ${memberName}: ${dateText}`);
+      }
+      
+      conflictDetails.push('\nCan someone adjust their availability? Or expand your ranges! Reply with your new dates.');
+      
       return {
         success: false,
         output: {
           type: 'status_update',
           status: 'Hmm, no overlapping dates found. 😕',
-          details: 'Let\'s try:\n• Different months\n• Expanding your availability\n• Or someone being more flexible\n\nReply with updated dates!',
+          details: conflictDetails.join('\n'),
           sendTo: 'group',
         },
       };
@@ -234,7 +253,7 @@ Only JSON, nothing else.`;
         stage: 'dates_set',
         stage_entered_at: new Date(),
       });
-      // Trigger state transition - state machine action will send the next prompt
+      // Trigger state transition - state machine will detect the stage change and emit the event automatically
       const { checkStateTransitions } = await import('../state/stateMachine.js');
       await checkStateTransitions(trip.id);
       

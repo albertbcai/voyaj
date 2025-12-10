@@ -21,7 +21,7 @@ const STAGES = {
         output: {
           type: 'status_update',
           status: `Awesome! We have ${members.length} people: ${memberNames} 🎉`,
-          details: `Time to plan! We need to figure out WHERE and WHEN.\n\nYou can share:\n• A destination idea (e.g., "Tokyo", "Bali", "Portugal")\n• Your date availability (e.g., "March 15-22" or "I'm flexible in April")\n\nLet's start with whatever you know first!`,
+          details: `Time to plan! We need to figure out WHERE and WHEN.\n\n🌍 **Gathering destination ideas:** Everyone share where you'd like to go! You can suggest multiple places (e.g., "Tokyo", "Bali", "Portugal"). Once we have everyone's ideas, we'll vote!\n\n📅 **Date availability:** Share when you're available (e.g., "March 15-22" or "I'm flexible in April").\n\nLet's start with whatever you know first!`,
           sendTo: 'group',
         },
       };
@@ -181,23 +181,6 @@ const STAGES = {
     },
   },
 
-  dates_set: {
-    next: 'tracking_flights',
-    trigger: 'immediate',
-    action: async (trip, agents) => {
-      const startDate = new Date(trip.start_date).toLocaleDateString();
-      const endDate = new Date(trip.end_date).toLocaleDateString();
-      return {
-        output: {
-          type: 'status_update',
-          status: `Perfect! Dates locked in: ${startDate} - ${endDate} 📅`,
-          details: `📍 ${trip.destination}\n📅 ${startDate} - ${endDate}\n\nTime to book flights! ✈️\n\nText me when you book: "BOOKED [airline] [flight number]" or just "BOOKED"`,
-          sendTo: 'group',
-        },
-      };
-    },
-  },
-
   tracking_flights: {
     next: 'trip_confirmed',
     trigger: 'all_flights_booked',
@@ -244,6 +227,20 @@ export async function checkStateTransitions(tripId) {
   if (trip.stage === 'planning') {
     await checkPlanningTransitions(tripId, trip);
     return;
+  }
+
+  // Handle stages with immediate trigger and action (even if next is null)
+  if (stage.trigger === 'immediate' && stage.action) {
+    // Check if we just entered this stage (stage_entered_at is recent, within last 5 seconds)
+    const stageEnteredAt = new Date(trip.stage_entered_at || trip.created_at);
+    const secondsSinceEntered = (Date.now() - stageEnteredAt.getTime()) / 1000;
+    
+    if (secondsSinceEntered < 5) {
+      // Just entered this stage - execute the action via orchestrator
+      console.log(`   🔄 State Machine: Executing immediate action for stage ${trip.stage}`);
+      emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: trip.stage, to: trip.stage });
+      return;
+    }
   }
 
   if (!stage.next) return; // Final state

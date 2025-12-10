@@ -1,4 +1,7 @@
 // Date overlap algorithm for finding common date windows
+// Focus: Find when everyone can travel together, not trip length
+
+const LARGE_WINDOW_THRESHOLD = 45; // days - split if overlap is larger than this
 
 export function findOverlappingDates(availabilities) {
   if (!availabilities || availabilities.length === 0) {
@@ -8,7 +11,7 @@ export function findOverlappingDates(availabilities) {
   // Filter out flexible people - they work with anything
   const constrained = availabilities.filter(a => !a.is_flexible && a.start_date && a.end_date);
 
-  // If everyone is flexible, suggest common trip lengths
+  // If everyone is flexible, suggest single default option
   if (constrained.length === 0) {
     return generateDefaultOptions();
   }
@@ -19,90 +22,78 @@ export function findOverlappingDates(availabilities) {
     end: new Date(a.end_date),
   }));
 
-  // Find the overlap window
+  // Find the overlap window: latest start → earliest end where everyone is available
   const latestStart = new Date(Math.max(...dateRanges.map(r => r.start.getTime())));
   const earliestEnd = new Date(Math.min(...dateRanges.map(r => r.end.getTime())));
 
   // Check if there's any overlap
   if (latestStart > earliestEnd) {
-    // No overlap - return empty or suggest compromises
-    return suggestCompromises(dateRanges);
+    // No overlap - return empty array (let parser handle conflict message)
+    return [];
   }
 
-  // Generate 7-day windows within the overlap
-  const options = [];
-  const oneWeek = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-  let current = new Date(latestStart);
+  // Calculate overlap duration in days
+  const overlapDays = Math.ceil((earliestEnd.getTime() - latestStart.getTime()) / (1000 * 60 * 60 * 24));
 
-  while (current.getTime() + oneWeek <= earliestEnd.getTime()) {
-    const endDate = new Date(current.getTime() + oneWeek);
-    options.push({
-      start: new Date(current),
-      end: endDate,
-      startDate: formatDate(current),
-      endDate: formatDate(endDate),
-      display: formatDateRange(current, endDate),
-    });
-    
-    // Move forward by 1 day
-    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+  // If overlap is reasonable (≤ 45 days), return single option
+  if (overlapDays <= LARGE_WINDOW_THRESHOLD) {
+    return [createDateOption(latestStart, earliestEnd)];
   }
 
-  // Return top 3 options (most recent first, or longest first)
-  return options
-    .sort((a, b) => b.start.getTime() - a.start.getTime()) // Most recent first
-    .slice(0, 3);
+  // If overlap is large (> 45 days), split into 2-3 reasonable chunks
+  return splitLargeWindow(latestStart, earliestEnd, overlapDays);
 }
 
 function generateDefaultOptions() {
-  // If everyone is flexible, suggest common trip lengths starting from next month
+  // If everyone is flexible, suggest single default option for next month
   const now = new Date();
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 15);
   const oneWeek = 7 * 24 * 60 * 60 * 1000;
+  const endDate = new Date(nextMonth.getTime() + oneWeek);
 
-  return [
-    {
-      start: new Date(nextMonth),
-      end: new Date(nextMonth.getTime() + oneWeek),
-      startDate: formatDate(nextMonth),
-      endDate: formatDate(new Date(nextMonth.getTime() + oneWeek)),
-      display: formatDateRange(nextMonth, new Date(nextMonth.getTime() + oneWeek)),
-    },
-    {
-      start: new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000),
-      end: new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000 + oneWeek),
-      startDate: formatDate(new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000)),
-      endDate: formatDate(new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000 + oneWeek)),
-      display: formatDateRange(
-        new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000),
-        new Date(nextMonth.getTime() + 14 * 24 * 60 * 60 * 1000 + oneWeek)
-      ),
-    },
-  ];
+  return [createDateOption(nextMonth, endDate)];
 }
 
-function suggestCompromises(dateRanges) {
-  // Find the closest dates that could work
-  const allStarts = dateRanges.map(r => r.start.getTime()).sort((a, b) => a - b);
-  const allEnds = dateRanges.map(r => r.end.getTime()).sort((a, b) => a - b);
+function splitLargeWindow(start, end, totalDays) {
+  // Split large overlap windows into 2-3 reasonable chunks
+  // Chunks are contiguous (no gaps) and together cover the full overlap window
+  const options = [];
+  
+  // Determine number of chunks (2 or 3) based on size
+  // For 46-90 days: 2 chunks, for 90+ days: 3 chunks
+  const numChunks = totalDays > 90 ? 3 : 2;
+  const chunkSize = Math.floor(totalDays / numChunks);
+  
+  let currentStart = new Date(start);
+  
+  for (let i = 0; i < numChunks; i++) {
+    // Calculate chunk end - for last chunk, use actual end date
+    let chunkEnd;
+    if (i === numChunks - 1) {
+      chunkEnd = new Date(end);
+    } else {
+      // Calculate end by adding chunk size minus 1 day (to make chunks contiguous)
+      const daysToAdd = chunkSize - 1;
+      chunkEnd = new Date(currentStart.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+    }
+    
+    options.push(createDateOption(currentStart, chunkEnd));
+    
+    // Move to next chunk - start immediately after this chunk ends (contiguous)
+    currentStart = new Date(chunkEnd.getTime() + (24 * 60 * 60 * 1000));
+  }
+  
+  return options;
+}
 
-  // Suggest dates around the middle of all ranges
-  const midStart = allStarts[Math.floor(allStarts.length / 2)];
-  const midEnd = allEnds[Math.floor(allEnds.length / 2)];
-
-  const oneWeek = 7 * 24 * 60 * 60 * 1000;
-  const start = new Date(midStart);
-  const end = new Date(start.getTime() + oneWeek);
-
-  return [
-    {
-      start,
-      end,
-      startDate: formatDate(start),
-      endDate: formatDate(end),
-      display: formatDateRange(start, end),
-    },
-  ];
+function createDateOption(start, end) {
+  return {
+    start: new Date(start),
+    end: new Date(end),
+    startDate: formatDate(start),
+    endDate: formatDate(end),
+    display: formatDateRange(start, end),
+  };
 }
 
 function formatDate(date) {

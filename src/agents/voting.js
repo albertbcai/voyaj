@@ -11,32 +11,49 @@ export class VotingAgent extends BaseAgent {
     super('Voting', '🗳️');
   }
 
+  static MAX_SUGGESTIONS_PER_MEMBER = 3;
+
   async handle(context, message) {
     const { trip, member } = context;
     
     this.logEntry('handle', context, message);
     
+    // Log current state for debugging
+    console.log(`   🗳️  Voting: Current state - stage: "${trip.stage}", destination: "${trip.destination || 'none'}", start_date: "${trip.start_date || 'none'}", end_date: "${trip.end_date || 'none'}"`);
+    
     try {
 
     // Handle different stages
-    if (trip.stage === 'collecting_destinations' || trip.stage === 'planning') {
-      // Check if message looks like a destination suggestion first
-      // If not, skip without checking membership (let coordinator handle casual chat)
+    if (trip.stage === 'collecting_destinations' || trip.stage === 'planning' || (trip.stage === 'dates_set' && !trip.destination)) {
+      // CRITICAL: Don't process destination suggestions if destination is already set
+      if (trip.destination) {
+        console.log(`   🗳️  Voting: Destination already set to "${trip.destination}", skipping destination suggestion processing`);
+        return { success: false, skip: true };
+      }
+      // Since orchestrator already used AI to route destination suggestions here,
+      // we should trust that decision. Only reject very obvious non-suggestions.
       const suggestion = message.body.trim();
       const lowerSuggestion = suggestion.toLowerCase();
-      const isCasualMessage = lowerSuggestion === 'ok' || 
-                             lowerSuggestion === 'sounds good' ||
-                             lowerSuggestion.includes('already in') ||
-                             lowerSuggestion.includes('wait') ||
-                             lowerSuggestion.includes('confused') ||
-                             lowerSuggestion.includes('what') ||
-                             lowerSuggestion.length < 2 ||
-                             false; // Allow longer messages - people might suggest multiple destinations
+      
+      // Only reject if message is EXACTLY a casual phrase (not if it contains these words)
+      // This prevents false positives like "Ok for destinations, I'm thinking Tokyo..."
+      const isCasualMessage = (lowerSuggestion === 'ok' || 
+                               lowerSuggestion === 'sounds good' ||
+                               lowerSuggestion === 'yeah' ||
+                               lowerSuggestion === 'cool' ||
+                               lowerSuggestion === 'nice' ||
+                               lowerSuggestion.length < 2) &&
+                              // Don't reject if message contains destination-like words (cities, countries)
+                              !this.looksLikeDestinationMessage(suggestion);
       
       if (isCasualMessage) {
         console.log(`   🗳️  Voting: Skipping casual message, not a destination suggestion`);
+        console.log(`   🗳️  Voting: Message body: "${suggestion.substring(0, 100)}${suggestion.length > 100 ? '...' : ''}"`);
         return { success: false, skip: true };
       }
+      
+      // Log that we're processing this as a destination suggestion
+      console.log(`   🗳️  Voting: Processing as destination suggestion: "${suggestion.substring(0, 100)}${suggestion.length > 100 ? '...' : ''}"`);
 
       // Now check membership only if it looks like a real suggestion
       if (!member) {
@@ -52,6 +69,12 @@ export class VotingAgent extends BaseAgent {
     }
 
     if (trip.stage === 'voting_destination' || trip.stage === 'voting_dates') {
+      // Also check if destination is already set - if so, we shouldn't be voting
+      if (trip.stage === 'voting_destination' && trip.destination) {
+        console.log(`   🗳️  Voting: Destination already set to "${trip.destination}", but stage is voting_destination - this is inconsistent, skipping vote`);
+        return { success: false, skip: true };
+      }
+      
       this.log('info', `Processing vote - poll: ${trip.stage}`);
       const result2 = await this.handleVote(context, message);
       this.logExit('handle', result2);
@@ -73,16 +96,25 @@ export class VotingAgent extends BaseAgent {
     const { trip, member, destinationSuggestions } = context;
     const suggestion = message.body.trim();
 
-    // Skip very short or obviously non-suggestion messages
-    // (This check is redundant now since orchestrator filters, but keep for safety)
+    // If we're in dates_set stage and destination is not set, transition to planning first
+    if (trip.stage === 'dates_set' && !trip.destination) {
+      console.log(`   🗳️  Voting: Transitioning from dates_set to planning to collect destination suggestions`);
+      await db.updateTrip(trip.id, {
+        stage: 'planning',
+        stage_entered_at: new Date(),
+      });
+      // Update trip object in context for rest of processing
+      trip.stage = 'planning';
+    }
+
+    // Skip only very obvious non-suggestions (exact matches only)
+    // Trust the orchestrator's AI-based routing decision
     const lowerSuggestion = suggestion.toLowerCase();
-    const isCasualMessage = lowerSuggestion === 'ok' || 
+    const isCasualMessage = (lowerSuggestion === 'ok' || 
                            lowerSuggestion === 'sounds good' ||
-                           lowerSuggestion.includes('already in') ||
-                           lowerSuggestion.includes('wait') ||
-                           lowerSuggestion.includes('confused') ||
-                           (lowerSuggestion.includes('what') && lowerSuggestion.length < 30) ||
-                           lowerSuggestion.length < 2;
+                           lowerSuggestion === 'yeah' ||
+                           lowerSuggestion.length < 2) &&
+                           !this.looksLikeDestinationMessage(suggestion);
     
     if (isCasualMessage) {
       console.log(`   🗳️  Voting: Skipping casual message, not a suggestion`);
@@ -118,24 +150,55 @@ export class VotingAgent extends BaseAgent {
 
     // Extract multiple destinations from the message (AI-powered)
     const destinations = await this.extractDestinations(suggestion);
+    console.log(`   🗳️  Voting: extractDestinations returned ${destinations.length} destinations:`, destinations);
+    
+    // Check how many suggestions this member already has (fetch fresh from DB, don't rely on context)
+    const allSuggestions = await db.getDestinationSuggestions(trip.id);
+    const memberSuggestions = allSuggestions.filter(s => s.member_id === member.id);
+    const currentCount = memberSuggestions.length;
+    const MAX_SUGGESTIONS = VotingAgent.MAX_SUGGESTIONS_PER_MEMBER;
+    
+    if (currentCount >= MAX_SUGGESTIONS) {
+      console.log(`   🗳️  Voting: Member ${member.name} already has ${currentCount} suggestions (max: ${MAX_SUGGESTIONS})`);
+      return {
+        success: true,
+        output: {
+          type: 'suggestion_limit_reached',
+          memberName: member.name,
+          currentCount,
+          maxCount: MAX_SUGGESTIONS,
+          message: `You've already suggested ${currentCount} destinations! Please pick your top ${MAX_SUGGESTIONS} favorites and we'll vote on those.`,
+          sendTo: 'individual',
+        },
+      };
+    }
+    
+    // Calculate how many more suggestions this member can make
+    const remainingSlots = MAX_SUGGESTIONS - currentCount;
+    const destinationsToProcess = destinations.slice(0, remainingSlots);
+    const skippedCount = destinations.length - destinationsToProcess.length;
+    
+    if (skippedCount > 0) {
+      console.log(`   🗳️  Voting: Limiting to ${remainingSlots} suggestions (${skippedCount} skipped to stay within limit)`);
+    }
     
     let savedCount = 0;
     let alreadySuggested = false;
     
-    // Save each destination suggestion
-    for (const dest of destinations) {
+    // Save each destination suggestion (up to the limit)
+    for (const dest of destinationsToProcess) {
       try {
         const normalized = await this.normalizeDestination(dest, context.allMembers);
         if (!normalized || normalized.length === 0) continue;
         
-        // Check if this specific destination was already suggested by this member
-        const alreadySuggestedThis = destinationSuggestions?.some(s => 
-          s.member_id === member.id && s.destination.toLowerCase() === normalized.toLowerCase()
+        // Check if this specific destination was already suggested by this member (use fresh data from DB)
+        const alreadySuggestedThis = memberSuggestions.some(s => 
+          s.destination.toLowerCase() === normalized.toLowerCase()
         );
         
         if (!alreadySuggestedThis) {
           await db.createDestinationSuggestion(trip.id, member.id, normalized);
-          console.log(`   🗳️  Voting: Destination suggestion recorded: "${normalized}"`);
+          console.log(`   🗳️  Voting: Destination suggestion recorded: "${dest}" → normalized to "${normalized}"`);
           savedCount++;
         } else {
           alreadySuggested = true;
@@ -158,34 +221,43 @@ export class VotingAgent extends BaseAgent {
     // Check if ready to transition to voting
     const suggestionCount = await db.getDestinationSuggestionCount(trip.id);
     const memberCount = context.allMembers.length;
+    console.log(`   🗳️  Voting: Checking if ready to vote - suggestionCount: ${suggestionCount}, memberCount: ${memberCount}`);
 
     if (suggestionCount >= memberCount) {
-      console.log(`   🗳️  Voting: All suggestions collected, transitioning to voting`);
+      console.log(`   🗳️  Voting: All suggestions collected (${suggestionCount} >= ${memberCount}), transitioning to voting`);
       return await this.startDestinationVoting(context);
     }
 
-    // Get pending members for status update
+    // Get pending members for status update (use fresh data from DB)
     const pending = context.allMembers
-      .filter(m => !destinationSuggestions?.some(s => s.member_id === m.id))
+      .filter(m => !allSuggestions.some(s => s.member_id === m.id))
       .map(m => m.name);
     
-    const isNewSuggestion = !destinationSuggestions?.some(s => s.member_id === member.id);
+    const isNewSuggestion = !allSuggestions.some(s => s.member_id === member.id);
     
     await checkStateTransitions(trip.id);
 
     // Return structured output for responder to format
-    const savedDestinations = destinations.filter(d => d && d.length > 0);
+    const savedDestinations = destinationsToProcess.filter(d => d && d.length > 0);
+    let responseMessage = null;
+    if (skippedCount > 0) {
+      responseMessage = `You've reached your limit of ${MAX_SUGGESTIONS} suggestions. We'll vote on the ones you've shared!`;
+    }
+    
     return {
       success: true,
       output: {
         type: 'destination_suggested',
+        memberName: member.name, // Include member name for acknowledgment
         destinations: savedDestinations,
         savedCount,
         alreadySuggested,
         suggestionCount,
         memberCount,
         pendingMembers: isNewSuggestion && pending.length > 0 ? pending : null,
-        sendTo: 'individual', // Individual acknowledgment, group status if pending
+        limitReached: skippedCount > 0,
+        limitMessage: responseMessage,
+        sendTo: skippedCount > 0 ? 'individual' : 'group', // Send to individual if limit reached
       },
     };
   }
@@ -195,11 +267,15 @@ export class VotingAgent extends BaseAgent {
     
     // Get all suggestions
     const suggestions = await db.getDestinationSuggestions(trip.id);
+    console.log(`   🗳️  Voting: startDestinationVoting - Found ${suggestions.length} suggestions in DB:`, 
+      suggestions.map(s => `"${s.destination}" (member: ${s.member_id})`).join(', '));
     
     // Consolidate duplicates
     const uniqueDestinations = this.consolidateSuggestions(suggestions);
+    console.log(`   🗳️  Voting: After consolidation - ${uniqueDestinations.length} unique destinations:`, uniqueDestinations);
     
     if (uniqueDestinations.length === 1) {
+      console.log(`   🗳️  Voting: Only 1 unique destination found ("${uniqueDestinations[0]}"), skipping voting and locking immediately`);
       // Only one unique destination - lock it immediately
       await db.updateTrip(trip.id, {
         destination: uniqueDestinations[0],
@@ -220,6 +296,8 @@ export class VotingAgent extends BaseAgent {
         },
       };
     }
+    
+    console.log(`   🗳️  Voting: Multiple unique destinations (${uniqueDestinations.length}), starting voting poll`);
 
     // Present voting options - transition to voting stage
     await db.updateTrip(trip.id, {
@@ -312,13 +390,16 @@ export class VotingAgent extends BaseAgent {
   }
 
   async parseVote(choice, pollType, context) {
-    // Get options based on poll type
+    // Always fetch options from database as the source of truth
     let options = [];
     if (pollType === 'destination') {
-      const suggestions = context.destinationSuggestions || [];
+      const suggestions = await db.getDestinationSuggestions(context.trip.id);
       options = this.consolidateSuggestions(suggestions);
     } else if (pollType === 'dates') {
-      options = context.dateOptions || [];
+      const availability = await db.getDateAvailability(context.trip.id);
+      const { findOverlappingDates } = await import('../utils/dateOverlap.js');
+      const dateOptions = findOverlappingDates(availability);
+      options = dateOptions.map(opt => opt.display);
     }
     
     if (options.length === 0) {
@@ -622,6 +703,22 @@ If it's a destination, provide a clean, normalized name (e.g., "Tokyo" not "toky
     }
   }
 
+  looksLikeDestinationMessage(text) {
+    // Quick check: does the message contain common destination names?
+    // This helps avoid false positives when messages start with "Ok" or contain "what"
+    const lower = text.toLowerCase();
+    const destinationKeywords = [
+      'tokyo', 'japan', 'portugal', 'spain', 'italy', 'greece', 'france', 'bali',
+      'thailand', 'vietnam', 'mexico', 'iceland', 'norway', 'sweden', 'denmark',
+      'germany', 'switzerland', 'austria', 'croatia', 'morocco', 'turkey', 'egypt',
+      'dubai', 'singapore', 'paris', 'london', 'barcelona', 'rome', 'amsterdam',
+      'berlin', 'prague', 'vienna', 'budapest', 'lisbon', 'athens', 'cairo',
+      'destination', 'destinations', 'place', 'places', 'city', 'cities', 'country', 'countries'
+    ];
+    
+    return destinationKeywords.some(keyword => lower.includes(keyword));
+  }
+
   consolidateSuggestions(suggestions) {
     // Simple deduplication: case-insensitive matching
     const seen = new Set();
@@ -769,7 +866,7 @@ Return the exact option name that the user intended to vote for.`;
         stage_entered_at: new Date(),
       });
 
-      // Trigger state transition - state machine action will send the next prompt
+      // Trigger state transition - state machine will detect the stage change and emit the event automatically
       await checkStateTransitions(trip.id);
       
       return {
@@ -796,7 +893,7 @@ Return the exact option name that the user intended to vote for.`;
           stage_entered_at: new Date(),
         });
 
-        // Trigger state transition - state machine action will send the next prompt
+        // Trigger state transition - state machine will detect the stage change and emit the event automatically
         await checkStateTransitions(trip.id);
         
         return {

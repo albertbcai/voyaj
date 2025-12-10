@@ -95,8 +95,8 @@ CREATE TABLE IF NOT EXISTS destination_suggestions (
   destination TEXT NOT NULL,
   suggested_at TIMESTAMP DEFAULT NOW(),
   
-  -- One suggestion per member per trip
-  UNIQUE(trip_id, member_id)
+  -- Allow multiple suggestions per member, but prevent exact duplicates
+  UNIQUE(trip_id, member_id, destination)
 );
 
 CREATE INDEX IF NOT EXISTS idx_destination_suggestions_trip ON destination_suggestions(trip_id);
