@@ -60,6 +60,23 @@
       background: #9ca3af;
       cursor: not-allowed;
     }
+    .sync-button {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .sync-button:hover {
+      background: #4f46e5;
+    }
+    .sync-button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
     .config {
       background: white;
       padding: 1rem;
@@ -228,6 +245,9 @@
     <div style="display: flex; gap: 0.5rem;">
       <button class="add-bot-button" id="addBotButton" onclick="addVoyajToGroup()" title="Simulate adding Voyaj to the group chat">
         ➕ Add Voyaj to Group
+      </button>
+      <button class="sync-button" id="syncButton" onclick="manualSync()" title="Manually sync messages from database">
+        🔄 Sync Chat
       </button>
       <button class="reset-button" id="resetButton" onclick="resetDatabase()" title="Clear all trips, members, and messages">
         🔄 Reset Database
@@ -428,11 +448,10 @@
     }
 
     const API_URL = 'http://localhost:3000';
-    let lastMessageTime = null;
-    let shownMessageIds = new Set(); // Track shown messages by content+timestamp to avoid duplicates
+    let shownMessageIds = new Set(); // Track shown messages by database ID to avoid duplicates
     let pollInterval = null;
     let isPolling = false;
-    let chatHistory = [];
+    let chatHistory = []; // Built from database - single source of truth
     let groupId = null;
 
     function updateStatus(message, type = 'ready') {
@@ -441,7 +460,26 @@
       statusEl.className = `status ${type}`;
     }
 
-    function addMessage(text, sender, isUser = false) {
+    function addMessage(text, sender, isUser = false, messageId = null, timestamp = null) {
+      // If messageId provided, check if we've already shown it
+      if (messageId && shownMessageIds.has(messageId)) {
+        return; // Already shown
+      }
+      
+      // If no messageId (user message shown immediately), check if we've already shown a message with same text/sender recently
+      // This prevents duplicates when syncing from database
+      if (!messageId && isUser) {
+        const recentDuplicate = chatHistory.find(msg => 
+          msg.text === text && 
+          msg.sender === sender && 
+          Math.abs(msg.timestamp - Date.now()) < 5000 // Within 5 seconds
+        );
+        if (recentDuplicate && recentDuplicate.id) {
+          // This message is already in chatHistory with an ID, skip showing it again
+          return;
+        }
+      }
+      
       const chat = document.getElementById('chat');
       const messageDiv = document.createElement('div');
       
@@ -463,22 +501,54 @@
       }
       
       messageDiv.className = messageClass;
+      messageDiv.dataset.messageId = messageId || `temp_${Date.now()}`;
+      messageDiv.dataset.timestamp = timestamp ? new Date(timestamp).getTime() : Date.now();
+      
+      // Use provided timestamp or current time
+      const displayTime = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
       
       const senderName = sender && sender !== 'You' ? `<div class="message-sender">${escapeHtml(sender)}</div>` : '';
       messageDiv.innerHTML = `
         ${senderName}
         <div>${escapeHtml(text)}</div>
-        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+        <div class="message-time">${displayTime}</div>
       `;
-      chat.appendChild(messageDiv);
+      
+      // Insert message in chronological order
+      const msgTimestamp = timestamp ? new Date(timestamp).getTime() : Date.now();
+      const existingMessages = Array.from(chat.children);
+      let inserted = false;
+      
+      for (let i = 0; i < existingMessages.length; i++) {
+        const existingTimestamp = parseInt(existingMessages[i].dataset.timestamp || '0');
+        if (msgTimestamp < existingTimestamp) {
+          chat.insertBefore(messageDiv, existingMessages[i]);
+          inserted = true;
+          break;
+        }
+      }
+      
+      if (!inserted) {
+        chat.appendChild(messageDiv);
+      }
+      
       chat.scrollTop = chat.scrollHeight;
 
-      // Add to chat history
+      // Add to chat history (use provided timestamp or current time)
       chatHistory.push({
+        id: messageId,
         text,
         sender: sender || 'You',
-        timestamp: Date.now()
+        timestamp: msgTimestamp
       });
+      
+      // Sort chatHistory by timestamp to keep it in order
+      chatHistory.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Mark as shown
+      if (messageId) {
+        shownMessageIds.add(messageId);
+      }
     }
 
     function escapeHtml(text) {
@@ -523,8 +593,9 @@
 
         const data = await response.json();
         if (data.success) {
-          updateStatus('Message sent. Waiting for response...', 'ready');
-          lastMessageTime = Date.now();
+          updateStatus('Message sent. Syncing messages...', 'ready');
+          // Sync messages immediately after sending
+          setTimeout(() => syncMessagesFromDatabase(), 500);
           startPolling(phoneNumber);
         } else {
           updateStatus('Error: ' + (data.error || 'Unknown error'), 'error');
@@ -538,80 +609,102 @@
       }
     }
 
-    async function checkForResponse(phoneNumber) {
+    // Sync all messages from database - single source of truth
+    // This ensures UI, personas, and bot all see the same messages in chronological order
+    async function syncMessagesFromDatabase() {
       try {
-        // Try to get group ID first
         const currentGroupId = document.getElementById('groupId').value || groupId;
         
-        let data = null;
-        
-        // If we have a group ID, use the group endpoint (better for group messages)
-        if (currentGroupId) {
-          try {
-            // Pass phone number as query param so endpoint can check it even if no members exist yet
-            const url = `${API_URL}/test/responses/group/${currentGroupId}/latest?phoneNumber=${encodeURIComponent(phoneNumber)}`;
-            console.log('🔍 Polling for messages:', url);
-            const response = await fetch(url);
-            data = await response.json();
-            console.log('📥 Response from group endpoint:', data);
-          } catch (error) {
-            console.warn('Error fetching group messages, falling back to phone number:', error);
-            // Fall back to phone number endpoint
-            const response = await fetch(`${API_URL}/test/responses/${phoneNumber}/latest`);
-            data = await response.json();
-            console.log('📥 Response from phone endpoint:', data);
-          }
-        } else {
-          // No group ID yet, use phone number endpoint
-          const response = await fetch(`${API_URL}/test/responses/${phoneNumber}/latest`);
-          data = await response.json();
-          console.log('📥 Response from phone endpoint (no group ID):', data);
+        if (!currentGroupId) {
+          return; // No group ID yet
         }
         
-        if (data.message && data.message.timestamp) {
-          console.log('✅ Found message:', data.message.body.substring(0, 50) + '...');
-          const messageTime = new Date(data.message.timestamp).getTime();
+        const url = `${API_URL}/test/messages/group/${currentGroupId}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.messages && Array.isArray(data.messages)) {
+          // Sort by timestamp to ensure chronological order
+          const sortedMessages = data.messages.sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
           
-          // Create a unique ID for this message (content + timestamp)
-          const messageId = `${data.message.body.substring(0, 100)}_${messageTime}`;
-          
-          // Only show if it's a new message we haven't seen before
-          // Use >= instead of > to catch messages with same timestamp, and check messageId first
-          if (!shownMessageIds.has(messageId)) {
-            // Also check timestamp to avoid showing very old messages on refresh
-            if (!lastMessageTime || messageTime >= lastMessageTime - 1000) { // Allow 1 second tolerance
-              console.log(`   📨 Displaying message (lastMessageTime: ${lastMessageTime}, messageTime: ${messageTime})`);
-              addMessage(data.message.body, 'Bot', false);
-              shownMessageIds.add(messageId);
-              lastMessageTime = Math.max(lastMessageTime || 0, messageTime);
+          // Add any new messages we haven't seen yet
+          let newMessagesCount = 0;
+          for (const msg of sortedMessages) {
+            if (!shownMessageIds.has(msg.id)) {
+              // Check if we've already shown this message (by text/sender/timestamp match)
+              // This handles user messages shown immediately before they're in the database
+              const msgTime = new Date(msg.timestamp).getTime();
+              const existingMsg = chatHistory.find(existing => 
+                existing.text === msg.text && 
+                existing.sender === msg.sender &&
+                Math.abs(existing.timestamp - msgTime) < 3000 // Within 3 seconds
+              );
               
-              // Update group ID if we got a response (means trip exists)
-              if (!groupId && currentGroupId) {
-                groupId = currentGroupId;
-              } else if (!groupId) {
-                const groupIdInput = document.getElementById('groupId').value;
-                if (groupIdInput) {
-                  groupId = groupIdInput;
-                } else {
-                  // Generate a group ID for this session
-                  groupId = `test-group-${Date.now()}`;
-                  document.getElementById('groupId').value = groupId;
-                }
+              if (existingMsg && !existingMsg.id) {
+                // Update existing entry with database ID instead of showing duplicate
+                existingMsg.id = msg.id;
+                shownMessageIds.add(msg.id);
+              } else if (!existingMsg) {
+                // New message - show it
+                const isUser = msg.sender === 'You' || (!msg.isBot && msg.sender !== 'Bot');
+                addMessage(msg.text, msg.sender, isUser, msg.id, msg.timestamp);
+                newMessagesCount++;
               }
-              updateStatus('Response received', 'ready');
-              
-              // Continue polling for a bit in case there are more messages
-              setTimeout(() => {
-                if (isPolling) {
-                  stopPolling();
-                }
-              }, 2000);
             }
           }
+          
+          if (newMessagesCount > 0) {
+            console.log(`✅ Synced ${newMessagesCount} new message(s) from database`);
+            updateStatus(`Synced ${newMessagesCount} new message(s)`, 'ready');
+          }
+          
+          // Update chatHistory to match database (single source of truth)
+          chatHistory = sortedMessages.map(msg => ({
+            id: msg.id,
+            text: msg.text,
+            sender: msg.sender,
+            timestamp: new Date(msg.timestamp).getTime()
+          }));
         }
       } catch (error) {
-        console.error('Error checking for response:', error);
+        console.error('Error syncing messages from database:', error);
+        updateStatus('Error syncing: ' + error.message, 'error');
       }
+    }
+    
+    // Manual sync function for the button
+    window.manualSync = async function() {
+      const syncButton = document.getElementById('syncButton');
+      const currentGroupId = document.getElementById('groupId').value || groupId;
+      
+      if (!currentGroupId) {
+        updateStatus('Please add Voyaj to a group first', 'error');
+        return;
+      }
+      
+      syncButton.disabled = true;
+      updateStatus('Syncing messages...', 'ready');
+      
+      try {
+        await syncMessagesFromDatabase();
+        updateStatus('Sync complete!', 'ready');
+        
+        // Reset status after 2 seconds
+        setTimeout(() => {
+          updateStatus('Ready', 'ready');
+        }, 2000);
+      } catch (error) {
+        updateStatus('Error syncing: ' + error.message, 'error');
+      } finally {
+        syncButton.disabled = false;
+      }
+    };
+    
+    // Legacy function - kept for backward compatibility but now just calls sync
+    async function checkForResponse(phoneNumber) {
+      await syncMessagesFromDatabase();
     }
 
     function startPolling(phoneNumber) {
@@ -621,15 +714,16 @@
 
       isPolling = true;
 
+      // Poll database for all messages (single source of truth)
       pollInterval = setInterval(() => {
-        checkForResponse(phoneNumber);
-      }, 300); // Poll more frequently to catch messages faster
+        syncMessagesFromDatabase();
+      }, 500); // Poll every 500ms to catch new messages quickly
 
       setTimeout(() => {
         if (isPolling) {
           stopPolling();
         }
-      }, 30000); // Poll for longer to catch delayed responses
+      }, 30000); // Poll for 30 seconds to catch delayed responses
     }
 
     function stopPolling() {
@@ -744,13 +838,10 @@
           })
         });
         
-        // Poll for bot response - check multiple times with increasing delays
-        // to catch messages that might take a moment to process
-        const phoneNum = document.getElementById('phoneNumber').value;
-        setTimeout(() => checkForResponse(phoneNum), 500);
-        setTimeout(() => checkForResponse(phoneNum), 1500);
-        setTimeout(() => checkForResponse(phoneNum), 3000);
-        setTimeout(() => checkForResponse(phoneNum), 5000);
+        // Sync messages from database after persona sends message
+        setTimeout(() => syncMessagesFromDatabase(), 500);
+        setTimeout(() => syncMessagesFromDatabase(), 1500);
+        setTimeout(() => syncMessagesFromDatabase(), 3000);
       } catch (error) {
         updateStatus('Error sending persona message: ' + error.message, 'error');
       }
@@ -851,13 +942,12 @@
           // Show system message
           addMessage('Voyaj has been added to the group chat! 🤖', 'System', false);
           
-          // Reset lastMessageTime and shown messages so welcome message will be shown
-          lastMessageTime = null;
+          // Reset shown messages so welcome message will be shown
           shownMessageIds.clear();
           
-          // Poll for the welcome message
+          // Sync messages from database (single source of truth)
           setTimeout(() => {
-            checkForResponse(phoneNumber);
+            syncMessagesFromDatabase();
             startPolling(phoneNumber);
           }, 500);
           
@@ -946,7 +1036,6 @@
           // Clear the chat
           document.getElementById('chat').innerHTML = '';
           chatHistory = [];
-          lastMessageTime = null;
           shownMessageIds.clear();
           groupId = null;
           document.getElementById('groupId').value = '';
@@ -970,8 +1059,12 @@
 
     window.addEventListener('load', () => {
       renderPersonas();
-      const phoneNumber = document.getElementById('phoneNumber').value;
-      checkForResponse(phoneNumber);
+      // Sync messages from database on load if we have a group ID
+      const currentGroupId = document.getElementById('groupId').value;
+      if (currentGroupId) {
+        groupId = currentGroupId;
+        syncMessagesFromDatabase();
+      }
       document.getElementById('messageInput').focus();
     });
   </script>

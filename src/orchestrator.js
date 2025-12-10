@@ -19,11 +19,21 @@ class Orchestrator {
       responder: new ResponderAgent(), // Social face of Voyaj
     };
     
+    // Track last executed stage change to prevent duplicates
+    this.lastStageChange = new Map(); // tripId -> { stage, from, to, timestamp }
+    
     // Listen for stage changes and send appropriate messages
     this.setupStageChangeHandlers();
   }
   
   setupStageChangeHandlers() {
+    // Defensive check: ensure event listener is only registered once
+    const listenerCount = tripEvents.listenerCount(EVENTS.STAGE_CHANGED);
+    if (listenerCount > 0) {
+      console.log(`   ⚠️  Orchestrator: Stage change listener already registered (${listenerCount} listeners), skipping duplicate registration`);
+      return;
+    }
+    
     tripEvents.on(EVENTS.STAGE_CHANGED, async ({ tripId, from, to }) => {
       console.log(`   📢 Stage changed: ${from} → ${to} for trip ${tripId}`);
       try {
@@ -37,6 +47,31 @@ class Orchestrator {
   async handleStageChange(tripId, from, to) {
     try {
       console.log(`   📢 Orchestrator: handleStageChange called for ${from} → ${to}`);
+      
+      // Prevent duplicate stage change actions - improved detection
+      const now = Date.now();
+      const lastChange = this.lastStageChange.get(tripId);
+      
+      // Check for duplicates: same stage within 5 seconds, OR same from/to transition within 2 seconds
+      if (lastChange) {
+        const timeSinceLastChange = now - lastChange.timestamp;
+        const isSameStage = lastChange.stage === to;
+        const isSameTransition = lastChange.from === from && lastChange.to === to;
+        
+        if ((isSameStage && timeSinceLastChange < 5000) || (isSameTransition && timeSinceLastChange < 2000)) {
+          console.log(`   ⚠️  Orchestrator: Duplicate stage change detected (${from} → ${to} within ${timeSinceLastChange}ms), skipping action execution`);
+          return;
+        }
+      }
+      
+      // Cleanup old entries (prevent memory leak)
+      const oneMinuteAgo = now - 60000;
+      for (const [tid, change] of this.lastStageChange.entries()) {
+        if (change.timestamp < oneMinuteAgo) {
+          this.lastStageChange.delete(tid);
+        }
+      }
+      
       const trip = await db.getTrip(tripId);
       if (!trip) {
         console.log(`   ⚠️  Orchestrator: Trip ${tripId} not found`);
@@ -64,6 +99,9 @@ class Orchestrator {
           await responder.formatAndSend(actionResult.output, context, dummyMessage);
         }
         console.log(`   ✅ Orchestrator: Action executed successfully`);
+        
+        // Record this stage change to prevent duplicates (store from/to for better detection)
+        this.lastStageChange.set(tripId, { stage: to, from, to, timestamp: now });
       } else {
         console.log(`   ⚠️  Orchestrator: No action defined for stage ${to}`);
       }
@@ -80,7 +118,9 @@ class Orchestrator {
         throw new Error(`Trip ${tripId} not found`);
       }
 
-      console.log(`   🎯 Orchestrator: Processing message for trip ${tripId} (stage: ${trip.stage})`);
+      // Log current state for debugging
+      console.log(`   🎯 Orchestrator: Processing message for trip ${tripId}`);
+      console.log(`   📊 Current state - stage: "${trip.stage}", destination: "${trip.destination || 'none'}", start_date: "${trip.start_date || 'none'}", end_date: "${trip.end_date || 'none'}"`);
 
       // Save message to database
       await db.createMessage(tripId, message.from, message.body, message.groupChatId, message.source || 'sms');
@@ -157,6 +197,12 @@ class Orchestrator {
       return { type: 'vote', agent: 'voting' };
     }
     
+    // If destination is already set and stage is planning, don't fast-path destination suggestions
+    // (let AI handle it with full context)
+    if (trip.destination && trip.stage === 'planning' && this.looksLikeDestinationSuggestion(message.body)) {
+      return null; // Let AI handle it
+    }
+    
     // Obvious single-word name in collecting_members stage (very simple)
     if (trip.stage === 'collecting_members') {
       if (body.length > 0 && body.length <= 20 && body.split(/\s+/).length === 1 && !body.includes('?') && !body.includes('@')) {
@@ -220,6 +266,13 @@ class Orchestrator {
   async detectIntentWithAI(trip, message) {
     // Primary intent detection using AI
     try {
+      // Rule-based check before AI: if destination is set and message looks like destination suggestion,
+      // route to conversation/coordinator instead
+      if (trip.destination && this.looksLikeDestinationSuggestion(message.body)) {
+        console.log(`   🧠 Intent Detection: Destination already set (${trip.destination}), routing destination-like message to conversation`);
+        return { type: 'conversation', agent: 'coordinator' };
+      }
+      
       const allMembers = await db.getMembers(trip.id);
       const memberNames = allMembers.map(m => m.name).join(', ');
       
@@ -228,10 +281,12 @@ class Orchestrator {
       if (trip.stage === 'planning') {
         const suggestionCount = await db.getDestinationSuggestionCount(trip.id);
         const availabilityCount = await db.getDateAvailabilityCount(trip.id);
-        stateContext = `Currently collecting both destinations (${suggestionCount} suggestions) and dates (${availabilityCount} submissions).`;
+        const destinationStatus = trip.destination ? `Destination already set: ${trip.destination}. ` : '';
+        stateContext = `${destinationStatus}Currently collecting both destinations (${suggestionCount} suggestions) and dates (${availabilityCount} submissions).`;
       } else if (trip.stage === 'collecting_destinations') {
         const suggestionCount = await db.getDestinationSuggestionCount(trip.id);
-        stateContext = `Currently collecting destination suggestions (${suggestionCount} collected so far).`;
+        const destinationStatus = trip.destination ? `Destination already set: ${trip.destination}. ` : '';
+        stateContext = `${destinationStatus}Currently collecting destination suggestions (${suggestionCount} collected so far).`;
       } else if (trip.stage === 'collecting_dates') {
         const availabilityCount = await db.getDateAvailabilityCount(trip.id);
         stateContext = `Currently collecting date availability (${availabilityCount} submissions so far).`;
@@ -256,19 +311,26 @@ Determine the user's intent. Reply with JSON only:
 
 Intent definitions:
 - member_join: User is providing their name to join the trip (simple name, no questions)
-- destination_suggestion: User suggesting a travel destination (city, country, region)
+- destination_suggestion: User suggesting, expressing enthusiasm about, or agreeing with a travel destination (city, country, region). Includes: explicit suggestions ("I'm thinking Japan"), enthusiasm ("Japan would be AMAZING!", "Thailand sounds incredible"), or agreement ("yes to Tokyo!", "I'm down for Bali")
 - date_availability: User providing when they're available (dates, date ranges, "flexible")
 - vote: User voting on a poll (numeric vote like "1" or "2", or natural language vote)
 - flight: User reporting flight booking information
-- question: User asking a question (has "?", question words, or seeking information)
+- question: User asking a question (has "?", question words, or seeking information) - BUT only if the message contains NO destination/date content
 - conversation: General chat, acknowledgment, or unclear intent
+
+IMPORTANT - Handling hybrid messages:
+- If message contains BOTH destination content AND questions: prioritize destination_suggestion when in planning/collecting_destinations stage
+- Destination enthusiasm/agreement counts as destination_suggestion even if questions are present
+- Only use "question" if the message is PURELY asking questions with no destination/date content
 
 Be smart about context:
 - "march or april" in planning stage → date_availability
 - "Tokyo or Shanghai" in planning stage → destination_suggestion
+- "Japan would be AMAZING! What do you think?" in planning stage → destination_suggestion (has destination enthusiasm + question, prioritize destination)
+- "ooh yes!! japan would be AMAZING! thailand sounds incredible too. riley what are you thinking??" in planning stage → destination_suggestion (destination enthusiasm takes priority over questions)
 - "1" in voting stage → vote
 - "Alex" when no member exists → member_join
-- "What dates work?" → question
+- "What dates work?" (no destination/date content) → question
 - "sounds good" → conversation`;
 
       const response = await callClaude(prompt, { maxTokens: 200, temperature: 0.0 });

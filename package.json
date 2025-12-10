@@ -14,7 +14,8 @@
     "test:scenarios": "node tests/scripts/full-trip-flow.js",
     "test:performance": "node --test tests/performance/**/*.test.js",
     "test:security": "node --test tests/security/**/*.test.js",
-    "db:migrate": "node scripts/migrate.js"
+    "db:migrate": "node scripts/migrate.js",
+    "db:add-notes": "node scripts/add-notes-column.js"
   },
   "keywords": ["trip", "coordination", "ai", "sms"],
   "author": "",
