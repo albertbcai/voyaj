@@ -271,7 +271,7 @@ Be smart about context:
 - "What dates work?" → question
 - "sounds good" → conversation`;
 
-      const response = await callClaude(prompt, { maxTokens: 200 });
+      const response = await callClaude(prompt, { maxTokens: 200, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       

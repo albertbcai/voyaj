@@ -176,7 +176,7 @@ Examples:
 Only JSON, nothing else.`;
 
     try {
-      const response = await callClaude(prompt, { maxTokens: 150 });
+      const response = await callClaude(prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       return parsed;
@@ -339,7 +339,7 @@ Return JSON only:
 Only JSON, nothing else.`;
 
     try {
-      const response = await callClaude(prompt, { maxTokens: 150 });
+      const response = await callClaude(prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       return { ...parsed, confidence: 0.8 };

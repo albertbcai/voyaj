@@ -600,6 +600,163 @@ Prioritized list of tasks and features organized by phase.
 
 ---
 
+## 🧪 Testing Strategy for AI Reliability Fixes
+
+**Approach:** Implement in batches, test after each batch, build confidence incrementally.
+
+### Batch 1: Items #1 + #2 (Temperature Control) - **START HERE**
+**Time:** 2 hours | **Risk:** Very low | **Impact:** MASSIVE (60% of issues)
+
+**Why batch together:**
+- #1 adds temperature parameter (does nothing alone)
+- #2 uses the parameter (depends on #1)
+- Tightly coupled - must go together
+- Zero risk - just adding parameters with backward-compatible defaults
+
+**Test Plan:**
+```bash
+# 1. Consistency test - Run same input 10 times
+# Should get IDENTICAL output every time with temp: 0.0
+
+# Test intent detection:
+# Send "Tokyo" 10 times → Should ALWAYS return "destination_suggestion"
+
+# Test vote parsing:
+# Send "1" during voting 10 times → Should ALWAYS parse as vote for option 1
+
+# Test date parsing:
+# Send "March 15-22" 10 times → Should ALWAYS parse to same date range
+
+# 2. Functional test - Full trip flow
+# - Create trip, add members
+# - Suggest destinations
+# - Vote on destination
+# - Submit dates
+# - Vote on dates
+# Verify: No crashes, correct behavior at each step
+```
+
+**Success Criteria:**
+- ✅ Same input → Same output (10/10 times)
+- ✅ No new errors introduced
+- ✅ All existing functionality still works
+
+---
+
+### Batch 2: Items #4 + #5 + #6 (Context Fixes)
+**Time:** 2.5 hours | **Risk:** Low-medium | **Impact:** High (30% of issues)
+
+**Why batch together:**
+- All about stale context after DB saves
+- Related problem, related solution
+- Testing together verifies the pattern works
+
+**Test Plan:**
+```bash
+# Manual test with 3 members:
+# 1. Member 1 suggests "Tokyo"
+# 2. Member 2 suggests "Bali"
+# 3. Member 3 suggests "Paris"
+#
+# Verify: After 3rd suggestion:
+# - Bot says "Ready to vote!" (not "Waiting on Member 3")
+# - Shows correct member count
+#
+# Repeat for dates
+```
+
+**Success Criteria:**
+- ✅ Status messages show correct pending members
+- ✅ Vote triggers at right time (3/3 not 2/3)
+- ✅ No stale data displayed
+
+---
+
+### Batch 3: Item #7 (Vote Parsing) - ALONE
+**Time:** 1 hour | **Risk:** Medium | **Impact:** Medium
+
+**Why separate:**
+- Replaces complex logic
+- Could break voting
+- Easier to debug alone
+
+**Test Plan:**
+```bash
+# During actual voting:
+# - "1" → Counts as vote for option 1
+# - "Tokyo" → Counts as vote for Tokyo (if option)
+# - "1\n\nTokyo!!!" → Counts as vote for option 1
+# - "This is confusing" → Ignored (not counted as vote)
+# - Verify vote tallies are correct
+```
+
+---
+
+### Batch 4: Item #8 (Intent Detection) - ALONE
+**Time:** 1 hour | **Risk:** Medium | **Impact:** High
+
+**Why separate:**
+- Changes core routing
+- Could break whole flow
+- Easier to debug alone
+
+**Test Plan:**
+```bash
+# Send 20 test messages, verify routing:
+# "Alex" → member_join
+# "Tokyo" → destination_suggestion
+# "March 15-22" → date_availability
+# "1" (in voting) → vote
+# "What dates work?" → question
+# "sounds good" → conversation
+```
+
+---
+
+### Batch 5: Item #3 (Responder Refactor) - SAVE FOR LATER
+**Time:** 3 hours | **Risk:** HIGH | **Impact:** High
+
+**Why separate and delay:**
+- Most complex change
+- High chance of bugs
+- Want #1-#8 working first to isolate issues
+- Can SKIP if #1-#8 solve most problems!
+
+**Test when ready:**
+- Organizing attempt → Responds with "control" tone
+- Simple question → Responds with "helper" tone
+- Casual chat → Doesn't respond (or minimal)
+
+---
+
+### General Testing After Each Batch
+
+**1. Automated (if test suite exists):**
+```bash
+npm test
+```
+
+**2. Consistency Check:**
+- Send same message 5-10 times
+- Verify identical responses (after Batch 1)
+
+**3. Smoke Test:**
+- Create trip → Add members → Suggest → Vote → Dates → Vote
+- Check for crashes at each step
+
+**4. Regression Check:**
+- Ensure old functionality still works
+- No new errors in logs
+
+**Red Flags to Watch:**
+- Bot not responding when it should
+- Different outputs for same input (after temp fixes!)
+- Crashes or errors
+- Wrong status messages
+- Votes not counting
+
+---
+
 ## 🟢 Phase 1: MVP Completion (Current Focus)
 
 ### SMS Integration & Group Messaging

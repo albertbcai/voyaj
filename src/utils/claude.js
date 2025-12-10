@@ -49,6 +49,7 @@ export async function callClaude(prompt, options = {}) {
     const response = await anthropic.messages.create({
       model: options.model || 'claude-sonnet-4-20250514',
       max_tokens: options.maxTokens || 1024,
+      temperature: options.temperature ?? 1.0,
       messages: [
         {
           role: 'user',
@@ -66,6 +67,7 @@ export async function callClaudeWithSystemPrompt(systemPrompt, userPrompt, optio
     const response = await anthropic.messages.create({
       model: options.model || 'claude-sonnet-4-20250514',
       max_tokens: options.maxTokens || 1024,
+      temperature: options.temperature ?? 1.0,
       system: systemPrompt,
       messages: [
         {
