@@ -445,7 +445,7 @@ Directions:
 - general: Question is for the group in general (e.g., "What dates work?", "Where should we go?")
 - none: Not a question or unclear intent`;
 
-      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150 });
+      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -516,7 +516,7 @@ Examples:
 - "John Smith" → isName: true
 - "march or april" → isName: false (dates)`;
 
-      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150 });
+      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -571,7 +571,7 @@ Examples:
 - "What dates work?" → type: "neither" (question)
 - "sounds good" → type: "neither" (acknowledgment)`;
 
-      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150 });
+      const response = await callClaudeWithSystemPrompt('', prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       

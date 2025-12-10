@@ -356,7 +356,7 @@ Extract the actual vote choice. Reply with JSON only:
 If the user is voting for option ${optionNumber} (${selectedOption}), set isVote to true and optionName to "${selectedOption}".
 If they're complaining, asking a question, or not voting, set isVote to false.`;
 
-            const response = await callClaude(prompt, { maxTokens: 100 });
+            const response = await callClaude(prompt, { maxTokens: 100, temperature: 0.0 });
             const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
             const parsed = JSON.parse(cleaned);
             
@@ -400,7 +400,7 @@ Is this a valid vote? Reply with JSON only:
 If they're voting, set isVote to true and optionName to the exact option name from the list above.
 If they're complaining (e.g., "This doesn't look right"), asking a question, or not voting, set isVote to false.`;
 
-      const response = await callClaude(prompt, { maxTokens: 150 });
+      const response = await callClaude(prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -456,7 +456,7 @@ If vague, extract the preference criteria. If specific destination, set isVague 
 
     try {
       const { callClaude } = await import('../utils/claude.js');
-      const response = await callClaude(prompt, { maxTokens: 100 });
+      const response = await callClaude(prompt, { maxTokens: 100, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -504,7 +504,7 @@ Reply with JSON array only:
 
 If no destinations found, return empty array [].`;
 
-      const response = await callClaude(prompt, { maxTokens: 150 });
+      const response = await callClaude(prompt, { maxTokens: 150, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -593,7 +593,7 @@ Reply with JSON only:
 
 If it's a destination, provide a clean, normalized name (e.g., "Tokyo" not "tokyo" or "TOKYO"). If not, set isDestination to false and normalizedName to null.`;
 
-      const response = await callClaude(prompt, { maxTokens: 100 });
+      const response = await callClaude(prompt, { maxTokens: 100, temperature: 0.0 });
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       
@@ -723,7 +723,7 @@ The stored winner doesn't match any option. What was the actual intended choice?
 
 Return the exact option name that the user intended to vote for.`;
 
-          const response = await callClaude(prompt, { maxTokens: 100 });
+          const response = await callClaude(prompt, { maxTokens: 100, temperature: 0.0 });
           const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
           const parsed = JSON.parse(cleaned);
           
