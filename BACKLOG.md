@@ -23,7 +23,7 @@ Prioritized list of tasks and features organized by phase.
 
 **Impact:** Fixes 60% of inconsistency issues. Same input will get same output 99% of the time.
 
-- [ ] **#1: Add temperature control to Claude API wrapper** (1 hour)
+- [x] **#1: Add temperature control to Claude API wrapper** (1 hour) ✅ COMPLETED
   - **File:** `src/utils/claude.js`
   - **Task:** Add `temperature` parameter to both functions
   - **Details:**
@@ -57,7 +57,7 @@ Prioritized list of tasks and features organized by phase.
     ```
   - **Test:** Call with `temperature: 0.0` and verify same result 10 times
 
-- [ ] **#2: Set temperature: 0.0 for all classification tasks** (1 hour)
+- [x] **#2: Set temperature: 0.0 for all classification tasks** (1 hour) ✅ COMPLETED
   - **Files:** Multiple files - see below
   - **Task:** Add `temperature: 0.0` to all deterministic AI calls
   - **Details:**
