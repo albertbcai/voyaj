@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"startDate\": \"2023-03-01\",\n  \"endDate\": \"2023-03-20\",\n  \"type\": \"date_range\"\n}",
+  "metadata": {
+    "prompt": "Extract date range from this message: \"March 1 - March 20\"\n\nOutput JSON only:\n{\n  \"startDate\": \"YYYY",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:25:23.384Z"
+  }
+}

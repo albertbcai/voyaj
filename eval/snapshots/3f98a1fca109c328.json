@@ -1,0 +1,8 @@
+{
+  "response": "[\"Tokyo\"]",
+  "metadata": {
+    "prompt": "Extract all travel destinations (cities, countries, or regions) from this message: \"Tokyo\"\n\nExamples",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:27:15.597Z"
+  }
+}

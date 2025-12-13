@@ -1,0 +1,9 @@
+{
+  "response": "I see we have our destination and dates set! 🎉 Tokyo from March 1-9, 2026. Perfect! Let's focus next on booking flights and accommodations. I'll send a quick summary of our confirmed details - if anything needs adjusting, just let me know. Excited to start planning the Tokyo adventure!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:25:27.678Z"
+  }
+}

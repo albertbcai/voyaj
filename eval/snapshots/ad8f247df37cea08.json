@@ -1,0 +1,9 @@
+{
+  "response": "🗳️ Awesome, Mike voted for Tokyo! 🗾\n\nWe now have 2 votes for Tokyo - just need 1 more vote (60% majority) to lock it in. Alex, go ahead and cast your vote when you're ready!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:24:13.952Z"
+  }
+}

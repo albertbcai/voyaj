@@ -28,75 +28,132 @@ Detailed plan for future evaluation framework enhancements.
 
 ## 📋 Phase 2: Agent Isolation Tests
 
-**Status:** 🔲 Not started
+**Status:** 🟡 Partially Complete (3/4 agents tested)
 
 **Goal:** Test each agent's AI decisions in isolation to catch classification bugs before they cascade into state issues
 
+**Progress:**
+- ✅ Coordinator Agent tests (name validation) - 100% accuracy (24/24)
+- ✅ Voting Agent tests (vote parsing, destination normalization) - 92.9% accuracy (26/28)
+- ✅ Parser Agent tests (date parsing) - 50% accuracy (5/10) - **Bugs found and documented**
+- 🔲 Responder Agent tests - **Deferred (hardest to test, response quality vs classification)**
+
 ### What to Build
 
-#### 2.1 Agent Test Harness
+#### 2.1 Agent Test Harness ✅ BUILT
 ```
 eval/agents/
-├── coordinator.eval.js      # Test coordinator AI calls
-├── voting.eval.js           # Test voting agent classification
-├── parser.eval.js           # Test parser accuracy
-├── responder.eval.js        # Test responder quality
-└── common/
-    ├── assertions.js        # Custom assertions
-    └── fixtures.js          # Shared test data
+├── coordinator.eval.js      # ✅ Test coordinator AI calls
+├── voting.eval.js           # ✅ Test voting agent classification
+├── parser.eval.js           # ✅ Test parser accuracy
+├── responder.eval.js        # 🔲 Test responder quality (deferred)
+├── runner.js                 # ✅ Test runner with logging
+├── common/
+│   ├── assertions.js        # ✅ Custom assertions
+│   ├── fixtures.js          # ✅ Shared test data
+│   └── helpers.js           # ✅ Test utilities (DB setup, snapshot mode)
+└── output/                  # ✅ Test result logs and JSON files
 ```
+
+**Features Added:**
+- ✅ Snapshot-based mocking (free, fast, deterministic)
+- ✅ File logging (`.log` and `.json` files in `output/` directory)
+- ✅ Detailed failure reporting with context
+- ✅ Ambiguous case tracking (separate from clear failures)
+- ✅ Future feature tests (document expected behavior)
 
 #### 2.2 Test Coverage by Agent
 
-**Coordinator Agent** (`eval/agents/coordinator.eval.js`)
-- ✅ Name validation: "Sarah" → is name, "March" → not name
-- ✅ Question routing: "What dates work?" → question intent
-- ✅ Date vs destination detection: "March" → date, "Paris" → destination
-- ✅ Organizing language detection: "Let's make a spreadsheet" → proactive control
+**Coordinator Agent** (`eval/agents/coordinator.eval.js`) ✅ COMPLETE
+- ✅ Name validation: 25 test cases (24 clear, 1 ambiguous)
+  - Simple names: "Sarah", "Mike", "Alex" → is name
+  - Full names: "John Smith", "Sarah Johnson" → is name
+  - Introductions: "I'm Sarah", "My name is Sarah" → is name
+  - Questions: "What dates work?" → not name
+  - Dates: "March 15", "march or april" → not name
+  - Ambiguous: "April" (could be name or month) - tracked separately
+- **Result:** 100% accuracy on clear cases (24/24)
 
-**Voting Agent** (`eval/agents/voting.eval.js`)
-- ✅ Destination extraction: "Tokyo and Paris" → ["Tokyo", "Paris"]
-- ✅ Vote parsing: "1" → option 1, "Tokyo" → option 1 (if Tokyo is option 1)
-- ✅ Vote with enthusiasm: "1 - Tokyo!!!" → option 1
-- ✅ Non-vote detection: "This doesn't look right" → null
-- ✅ Vague preference: "somewhere with good food" → vague (not destination)
+**Voting Agent** (`eval/agents/voting.eval.js`) ✅ COMPLETE
+- ✅ Vote parsing: 15 test cases
+  - Numeric votes: "1", "2" → correct option
+  - Name-based votes: "Tokyo", "Bali" → correct option
+  - Enthusiasm: "1 - Tokyo!!!" → correct option
+  - Natural language: "I vote for option 1" → correct option
+  - Non-votes: "This doesn't look right", "What are the options?" → null
+  - **Bug found:** Invalid option numbers ("4", "0") incorrectly parsed - documented in backlog
+- ✅ Destination normalization: 13 test cases
+  - Simple destinations: "Tokyo", "Bali", "Paris" → normalized
+  - Case variations: "tokyo", "TOKYO" → normalized
+  - Countries: "Japan", "Portugal" → normalized
+  - Non-destinations: "somewhere with good food" → correctly rejected
+  - Member names: "Sarah", "Mike" → correctly rejected (NAME_NOT_DESTINATION)
+- ✅ Future feature: Add option mid-vote (2 test cases documenting expected behavior)
+- **Result:** 92.9% accuracy (26/28) - 2 bugs found and documented
 
-**Parser Agent** (`eval/agents/parser.eval.js`)
-- ✅ Date parsing accuracy: "March 15-22" → {start: "2025-03-15", end: "2025-03-22"}
-- ✅ Various date formats: "April 1 to 10", "March", "flexible in April"
-- ✅ Date validation: end > start, future dates, within 2 years
-- ✅ Flight parsing: "BOOKED United 154" → {airline: "United", flight: "154"}
+**Parser Agent** (`eval/agents/parser.eval.js`) ✅ COMPLETE
+- ✅ Date parsing: 10 test cases
+  - Exact dates: "July 15-31", "07/15 - 07/31" → correct
+  - Flexible: "flexible", "I'm flexible in April" → correct
+  - **Bug found:** Dates defaulting to 2023 instead of 2025 - documented in backlog
+  - **Bug found:** Relative dates ("next week", "late May") parsed as "flexible" instead of date ranges - documented in backlog
+- ✅ Future feature: Relative date confirmation (2 test cases, test setup issue - documented)
+- **Result:** 50% accuracy (5/10) - 3 bugs found and documented
 
-**Responder Agent** (`eval/agents/responder.eval.js`)
-- ✅ Response decision: Should respond vs skip (based on context)
-- ✅ Tone selection: Control vs helper tone
-- ✅ Content quality: Includes destination, pending members, next steps
+**Responder Agent** (`eval/agents/responder.eval.js`) 🔲 DEFERRED
+- **Status:** Not yet implemented - hardest to test (response quality vs classification)
+- **Planned tests:**
+  - Response decision: Should respond vs skip (based on context)
+  - Tone selection: Control vs helper tone
+  - Content quality: Includes destination, pending members, next steps
+- **Reason for deferral:** Requires different testing approach (quality evaluation vs pass/fail), better suited for Phase 3
 
-#### 2.3 Accuracy Metrics
+#### 2.3 Accuracy Metrics ✅ IMPLEMENTED
 
 **Output format:**
 ```bash
 npm run eval:agents
 
-Intent Detection: 95% accuracy (38/40 correct)
-  ✅ member_join: 100% (10/10)
-  ✅ destination_suggestion: 90% (9/10)
-  ❌ "march" → classified as date_availability (expected: member_join)
-  ✅ vote: 100% (10/10)
-  ✅ question: 90% (9/10)
+🧪 Agent Isolation Tests
+🎬 Using 164 saved snapshots (free, fast, deterministic)
 
-Vote Parsing: 97% accuracy (29/30 correct)
-  ✅ Numeric votes: 100% (10/10)
-  ✅ Name votes: 90% (9/10)
-  ✅ Enthusiasm votes: 100% (10/10)
-  ❌ "This doesn't look right" → parsed as vote (expected: null)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 Coordinator Agent Tests
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Date Parsing: 90% accuracy (27/30 correct)
-  ✅ Exact dates: 95% (19/20)
-  ✅ Flexible: 100% (5/5)
-  ❌ "April" → failed to parse (expected: flexible in April)
-  ❌ "next week" → failed to parse
+Clear Cases: 100% accuracy (24/24 correct)
+⚠️  Ambiguous: 1 cases (tracked separately)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🗳️  Voting Agent Tests
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Vote Parsing: 86.7% accuracy (13/15 correct)
+  ❌ "4" → Expected null, got Paris (Invalid option number)
+  ❌ "0" → Expected null, got Tokyo (Invalid option number)
+
+Destination Normalization: 100% accuracy (13/13 correct)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✈️  Parser Agent Tests
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Date Parsing: 50% accuracy (5/10 correct)
+  ❌ Year parsing issues (2023 vs 2025)
+  ❌ Relative dates parsed as "flexible"
+
+Overall: 88.7% accuracy (55/62 correct)
+
+💾 Results saved to:
+   📄 eval/agents/output/agent-tests-{timestamp}.log
+   📄 eval/agents/output/agent-tests-{timestamp}.json
 ```
+
+**Features:**
+- ✅ Detailed failure reports with input/expected/actual
+- ✅ Ambiguous case tracking (separate from failures)
+- ✅ Future feature test tracking
+- ✅ File logging for historical review
 
 #### 2.4 Implementation Approach
 
@@ -144,19 +201,41 @@ export function assertArrayEquals(actual, expected) {
 ### Timeline
 
 **Estimated time:** 4-6 hours
+**Actual time:** ~6-8 hours (including logging, bug documentation, and resolving uncertain test cases)
 
 **Breakdown:**
-- Agent test harness setup: 1 hour
-- Write test cases (20-30 per agent): 2-3 hours
-- Metrics and reporting: 1 hour
-- Documentation: 30 min
+- ✅ Agent test harness setup: 1 hour
+- ✅ Write test cases (25+ per agent): 3-4 hours
+- ✅ Metrics and reporting: 1 hour
+- ✅ File logging: 1 hour
+- ✅ Bug documentation: 30 min
+- ✅ Documentation: 30 min
 
 ### Success Criteria
 
-- ✅ 95%+ accuracy on all agent classifications
-- ✅ Tests run in under 2 minutes
-- ✅ Clear failure reports ("Intent detection: 92% → Need to improve")
+- ✅ Tests run in under 2 minutes (using snapshots)
+- ✅ Clear failure reports with detailed context
 - ✅ Easy to add new test cases
+- ✅ File logging for historical review
+- ⚠️ 95%+ accuracy on all agent classifications - **Not yet achieved:**
+  - Coordinator: 100% ✅
+  - Voting: 92.9% (2 bugs found)
+  - Parser: 50% (3 bugs found)
+- ✅ Bugs documented in backlog for fixing
+
+### Bugs Found and Documented
+
+All bugs found during testing have been documented in `BACKLOG.md`:
+- **#12:** Invalid option numbers parsed as votes (Voting Agent)
+- **#13:** Date parsing defaults to 2023 instead of 2025 (Parser Agent)
+- **#14:** Relative dates parsed as "flexible" instead of date ranges (Parser Agent)
+- **#15:** Test setup issue for relative date confirmation (Parser Agent)
+
+### Next Steps
+
+1. **Fix documented bugs** - Address issues #12, #13, #14, #15
+2. **Re-run tests** - Verify fixes improve accuracy
+3. **Responder Agent tests** - Defer to Phase 3 (response quality evaluation) or implement later with different approach
 
 ---
 
@@ -478,10 +557,12 @@ Recommendations:
 
 ### Immediate Priority (Do This First)
 
-**Phase 2: Agent Isolation Tests**
+**Phase 2: Agent Isolation Tests** 🟡 **75% Complete**
 - **Why:** Catch bugs at the source (agent level) before they cascade
-- **Time:** 4-6 hours
+- **Time:** 4-6 hours (estimated), ~6-8 hours (actual)
 - **Value:** 30% faster debugging, 20% fewer integration test failures
+- **Status:** 3/4 agents tested, 5 bugs found and documented
+- **Next:** Fix documented bugs (#12, #13, #14, #15), then consider Responder Agent tests
 
 ### Medium Priority (Do When Response Quality Matters)
 
@@ -535,6 +616,7 @@ Things to decide later:
 
 ---
 
-**Last updated:** 2025-01-13
+**Last updated:** 2025-12-13
 
-**Next review:** After Phase 2 completion
+**Phase 2 Status:** 75% complete (3/4 agents tested, Responder Agent deferred)
+**Next review:** After bug fixes (#12, #13, #14, #15) are complete

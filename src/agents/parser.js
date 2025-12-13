@@ -1,6 +1,5 @@
 import { BaseAgent } from './base.js';
 import * as db from '../db/queries.js';
-import { twilioClient } from '../utils/twilio.js';
 import { callClaude } from '../utils/claude.js';
 import { emitEvent, EVENTS } from '../state/eventEmitter.js';
 
@@ -29,7 +28,7 @@ export class ParserAgent extends BaseAgent {
     }
 
     // Handle date availability collection
-    if (trip.stage === 'collecting_dates' || trip.stage === 'planning' || trip.stage === 'destination_set') {
+    if (trip.stage === 'collecting_dates' || trip.stage === 'planning') {
       console.log(`   ✈️  Parser: Collecting date availability`);
       return await this.handleDateAvailability(context, message);
     }
@@ -153,8 +152,16 @@ export class ParserAgent extends BaseAgent {
         },
       };
     } else {
-      await twilioClient.sendSMS(message.from, 'I couldn\'t understand those dates. Try:\n• "March 15-22"\n• "I\'m flexible in April"\n• "Late May or early June"');
-      return { success: false };
+      // Return error message for responder to format
+      return {
+        success: false,
+        output: {
+          type: 'date_parse_error',
+          message: 'I couldn\'t understand those dates. Try:\n• "March 15-22"\n• "I\'m flexible in April"\n• "Late May or early June"',
+          sendTo: 'individual',
+          recipient: message.from,
+        },
+      };
     }
   }
 
@@ -247,15 +254,14 @@ Only JSON, nothing else.`;
     
     if (options.length === 1) {
       // Only one option - lock it immediately
+      // Update dates and transition to planning
       await db.updateTrip(trip.id, {
         start_date: options[0].startDate,
         end_date: options[0].endDate,
-        stage: 'dates_set',
-        stage_entered_at: new Date(),
       });
-      // Trigger state transition - state machine will detect the stage change and emit the event automatically
-      const { checkStateTransitions } = await import('../state/stateMachine.js');
-      await checkStateTransitions(trip.id);
+      // Transition to planning - planning state will check if destination is set
+      const { requestStateTransition } = await import('../state/stateMachine.js');
+      await requestStateTransition(trip.id, 'planning', 'single date option locked');
       
       return {
         success: true,
@@ -412,12 +418,6 @@ Only JSON, nothing else.`;
     return { success: false };
   }
 
-  async sendToGroup(tripId, message) {
-    const members = await db.getMembers(tripId);
-    for (const member of members) {
-      await twilioClient.sendSMS(member.phone_number, message);
-    }
-  }
 }
 
 

@@ -96,7 +96,8 @@ class Orchestrator {
           };
           // Create a dummy message for responder (won't be used, but needed for signature)
           const dummyMessage = { from: '', body: '', groupChatId: trip.group_chat_id };
-          await responder.formatAndSend(actionResult.output, context, dummyMessage);
+          const responderResult = await responder.formatResponse(actionResult.output, context, dummyMessage);
+          await this.sendMessage(responderResult, tripId, dummyMessage?.groupChatId || trip.group_chat_id);
         }
         console.log(`   ✅ Orchestrator: Action executed successfully`);
         
@@ -156,7 +157,9 @@ class Orchestrator {
           type: 'conversation',
           sendTo: 'individual',
         };
-        return await responder.formatAndSend(conversationOutput, responderContext, message);
+        const responderResult = await responder.formatResponse(conversationOutput, responderContext, message);
+        await this.sendMessage(responderResult, tripId, message?.groupChatId || trip.group_chat_id);
+        return { success: true };
       }
 
       // Handle handoffs
@@ -166,11 +169,13 @@ class Orchestrator {
         return await newAgent.handle(context, message);
       }
 
-      // If agent returned structured output, format it with responder
+      // If agent returned structured output (success or error), format it with responder
       if (result.output && result.output.type) {
         console.log(`   📝 Agent returned structured output, formatting with responder`);
         const responder = this.agents.responder;
-        return await responder.formatAndSend(result.output, context, message);
+        const responderResult = await responder.formatResponse(result.output, context, message);
+        await this.sendMessage(responderResult, tripId, message?.groupChatId || trip.group_chat_id);
+        return { success: result.success !== false };
       }
 
       if (result.success) {
@@ -182,6 +187,48 @@ class Orchestrator {
       console.error('   ❌ Orchestrator error:', error);
       await this.handleError(tripId, message, error);
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send message based on responder result
+   */
+  async sendMessage(responderResult, tripId, groupChatId) {
+    if (responderResult.reasoning) {
+      console.log(`   💬 Responder: ${responderResult.reasoning}`);
+    }
+    
+    if (!responderResult.message) {
+      // Skipped - no message to send
+      return;
+    }
+    
+    if (responderResult.sendTo === 'group') {
+      // Send to entire group
+      const members = await db.getMembers(tripId);
+      // Store bot message in database FIRST (before sending SMS)
+      // This ensures UI sees the message immediately when polling, avoiding race conditions
+      if (members.length > 0) {
+        await db.createMessage(tripId, 'bot', responderResult.message, groupChatId, 'bot');
+      }
+      // Then send SMS to all members
+      for (const member of members) {
+        await twilioClient.sendSMS(member.phone_number, responderResult.message);
+      }
+    } else if (responderResult.recipient) {
+      // Specific individual message
+      await twilioClient.sendSMS(responderResult.recipient, responderResult.message, tripId, groupChatId);
+      // Store bot message in database for conversation history
+      await db.createMessage(tripId, 'bot', responderResult.message, groupChatId, 'bot');
+    } else {
+      // Fallback: send to group
+      const members = await db.getMembers(tripId);
+      if (members.length > 0) {
+        await db.createMessage(tripId, 'bot', responderResult.message, groupChatId, 'bot');
+      }
+      for (const member of members) {
+        await twilioClient.sendSMS(member.phone_number, responderResult.message);
+      }
     }
   }
 

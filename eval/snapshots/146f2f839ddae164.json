@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"isDestination\": true,\n  \"normalizedName\": \"Bali\"\n}",
+  "metadata": {
+    "prompt": "Is \"Bali\" a travel destination (city, country, or region)?\n\nExamples:\n- \"Tokyo\" → yes (city)\n- \"Japa",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:27:20.834Z"
+  }
+}

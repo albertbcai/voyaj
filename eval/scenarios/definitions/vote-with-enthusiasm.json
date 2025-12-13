@@ -69,7 +69,7 @@
       "from": "+15552222222",
       "message": "1 - I love sushi so Tokyo is perfect",
       "expect": {
-        "stage": "destination_set",
+        "stage": "planning",
         "destination": "Tokyo"
       }
     }

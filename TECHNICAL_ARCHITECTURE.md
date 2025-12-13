@@ -831,58 +831,110 @@ messageQueue.process(async (job) => {
 
 ### State Definitions
 
+**Core States (9 total):**
+1. `created` - Trip just created, bot added to chat
+2. `collecting_members` - Gathering people to join the trip (minimum 2 members)
+3. `planning` - Pre-voting phase: collecting destination suggestions and/or date availability
+4. `voting_destination` - Active poll for destination
+5. `voting_dates` - Active poll for dates
+6. `tracking_flights` - Both destination and dates set, tracking flight bookings
+7. `trip_confirmed` - All flights booked, waiting for trip to start
+8. `active` - Trip is happening
+9. `completed` - Trip is over
+
+**State Flow:**
+```
+planning → voting_destination → planning (with destination set)
+planning → voting_dates → planning (with dates set)
+planning (with both set) → tracking_flights
+```
+
+### Planning State Design
+
+**Key Principles:**
+- Accepts both destination suggestions and date availability simultaneously
+- Tracks counts in database: distinct members with destination suggestions vs date availability
+- Default: Nudges toward dates ("Let's start with dates...")
+- Tone adjustment: Compare counts - if destination count > date count, be less pushy about dates
+
+**Voting Triggers (whichever happens first):**
+- Destination threshold: All members have suggested destinations → start `voting_destination`
+- Date threshold: All members have shared date availability → start `voting_dates` (default preference)
+- Timeout: 12 hours in planning → vote on whichever has more suggestions
+
+**After Voting:**
+- After destination voting completes → return to `planning` (planning checks if dates are set)
+- After date voting completes → return to `planning` (planning checks if destination is set)
+- If both destination and dates are set → transition to `tracking_flights`
+
+### Architecture Principles
+
+1. **Single Source of Truth**: Only `checkStateTransitions()` should modify stage
+2. **Actions Are Pure**: Actions return outputs only, never modify state directly
+3. **Observable States**: States should be observable (not immediately transitioned away)
+4. **Centralized Transitions**: All state changes go through `requestStateTransition()` function
+
 ```javascript
 // state/stateMachine.js
 const STAGES = {
   created: {
     next: 'collecting_members',
     trigger: 'first_member_joined',
-    action: async (trip) => {
-      await sendToGroup(trip.id, 
-        'Hey! New trip 🎉 Everyone reply with your name to join.');
-    }
   },
   
   collecting_members: {
-    next: 'voting_destination',
+    next: 'planning',
     trigger: 'enough_members',
     condition: async (trip) => {
       const memberCount = await db.getMemberCount(trip.id);
-      return memberCount >= 3;
+      return memberCount >= 2;
     },
-    action: async (trip) => {
-      await sendToGroup(trip.id,
-        'Got enough people! Let's plan. Where should we go?');
-    }
+  },
+  
+  planning: {
+    next: null, // Dynamic - can go to voting_destination, voting_dates, or tracking_flights
+    trigger: 'check_whats_ready',
+    // Planning state checks:
+    // - Count of destination suggestions vs date availability
+    // - If both destination and dates are set → tracking_flights
+    // - If threshold met → voting_destination or voting_dates
   },
   
   voting_destination: {
-    next: 'destination_set',
+    next: 'planning', // Return to planning after voting
     trigger: 'poll_complete',
     condition: async (trip) => {
       const votes = await db.getVotes(trip.id, 'destination');
       const members = await db.getMembers(trip.id);
-      const majority = votes.length >= members.length * 0.6;
-      const timeout = Date.now() - trip.stage_entered_at > 48 * 60 * 60 * 1000;
+      const majority = votes.length >= Math.ceil(members.length * 0.6);
+      const timeout = Date.now() - new Date(trip.stage_entered_at).getTime() > 48 * 60 * 60 * 1000;
       return majority || timeout;
     },
-    action: async (trip) => {
-      const winner = await votingAgent.tallyVotes(trip.id);
-      await db.updateTrip(trip.id, { destination: winner });
-      await sendToGroup(trip.id, `${winner} wins! 🎉`);
-    }
   },
   
-  destination_set: {
-    next: 'voting_dates',
-    trigger: 'immediate',
-    action: async (trip) => {
-      await sendToGroup(trip.id,
-        'Now let's pick dates. When can everyone go?');
-    }
+  voting_dates: {
+    next: 'planning', // Return to planning after voting
+    trigger: 'poll_complete',
+    condition: async (trip) => {
+      const votes = await db.getVotes(trip.id, 'dates');
+      const members = await db.getMembers(trip.id);
+      const majority = votes.length >= Math.ceil(members.length * 0.6);
+      const timeout = Date.now() - new Date(trip.stage_entered_at).getTime() > 48 * 60 * 60 * 1000;
+      return majority || timeout;
+    },
   },
   
-  // ... etc for all stages
+  tracking_flights: {
+    next: 'trip_confirmed',
+    trigger: 'all_flights_booked',
+    condition: async (trip) => {
+      const flightCount = await db.getFlightCount(trip.id);
+      const memberCount = await db.getMemberCount(trip.id);
+      return flightCount >= memberCount;
+    },
+  },
+  
+  // ... etc for remaining stages
 };
 ```
 

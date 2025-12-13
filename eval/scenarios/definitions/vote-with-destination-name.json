@@ -21,7 +21,7 @@
       "from": "+15552222222",
       "message": "Mike",
       "expect": {
-        "stage": "collecting_members",
+        "stage": "planning",
         "memberCount": 2
       }
     },
@@ -73,7 +73,7 @@
       "from": "+15552222222",
       "message": "I vote for Tokyo!",
       "expect": {
-        "stage": "destination_set",
+        "stage": "planning",
         "destination": "Tokyo",
         "voteCount": 2,
         "responseMustContain": ["Tokyo"]

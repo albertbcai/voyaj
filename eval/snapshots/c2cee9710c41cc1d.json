@@ -1,0 +1,9 @@
+{
+  "response": "🗳️ Great first vote, Sarah! We now have 1 vote for Tokyo. Need 1 more vote from Mike or Alex to lock in our destination. Current status: 1/3 votes (Sarah voted Tokyo), 2 pending. 📊",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:39:07.085Z"
+  }
+}

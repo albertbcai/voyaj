@@ -1,0 +1,9 @@
+{
+  "response": "Here is my response:\n\nVoyaj: 🎉 Fantastic, we have a winner - March 1-9! With 2 out of 3 votes, March 1-9 has been locked in as our travel dates. 📆 This means we have the destination (Tokyo) and dates (March 1-9) all set - great work team! 👏 Next step is to start planning the Tokyo itinerary. I'll follow up with everyone individually to get your top interests and preferences so we can build an amazing trip. Can't wait to start booking this Tokyo adventure! 🇯🇵",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:25:28.432Z"
+  }
+}

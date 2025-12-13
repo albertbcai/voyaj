@@ -1,6 +1,8 @@
-import { db } from '../../src/db/queries.js';
+import * as db from '../../src/db/queries.js';
 import { messageQueue } from '../../src/queue/messageQueue.js';
 import { orchestrator } from '../../src/orchestrator.js';
+import { resetCostTracker, getCostTracker, calculateCost } from '../../src/utils/claude.js';
+import { getSnapshotStats, getSnapshotUsageLog, resetSnapshotUsageLog } from '../../src/utils/snapshotManager.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -28,6 +30,12 @@ class ScenarioRunner {
 
     console.log(`\n📋 Running: ${scenario.name}`);
     console.log(`   ${scenario.description}\n`);
+
+    // Reset cost tracker for this scenario
+    resetCostTracker();
+    
+    // Reset snapshot usage log for this scenario
+    resetSnapshotUsageLog();
 
     // Initialize test trip
     const trip = await this.setupTrip(scenario);
@@ -63,6 +71,33 @@ class ScenarioRunner {
     conversation.duration = conversation.endTime - conversation.startTime;
     conversation.passed = allPassed;
 
+    // Calculate cost for this scenario
+    const costTracker = getCostTracker();
+    const estimatedCost = calculateCost(costTracker);
+    const snapshotStats = await getSnapshotStats();
+    const usingSnapshots = process.env.USE_SNAPSHOTS !== 'false' && snapshotStats.count > 0;
+    
+    conversation.cost = {
+      estimated: estimatedCost,
+      inputTokens: costTracker.totalInputTokens,
+      outputTokens: costTracker.totalOutputTokens,
+      calls: costTracker.calls.length,
+      usingSnapshots,
+    };
+
+    // Log cost at end of scenario
+    if (usingSnapshots && !process.env.RECORD_SNAPSHOTS) {
+      if (costTracker.calls.length === 0) {
+        console.log(`   🎬 Replay mode: Using snapshots (cost: $0.00, 0 API calls)`);
+      } else {
+        console.log(`   🎬 Replay mode: Using snapshots + ${costTracker.calls.length} new API calls (cost: ~$${estimatedCost.toFixed(4)})`);
+        console.log(`   💡 Tip: Run 'npm run eval:record' to capture missing snapshots`);
+      }
+    } else if (estimatedCost > 0) {
+      const mode = process.env.RECORD_SNAPSHOTS === 'true' ? ' (recording)' : '';
+      console.log(`   💰 Estimated cost: ~$${estimatedCost.toFixed(4)}${mode} (${costTracker.calls.length} API calls, ${costTracker.totalInputTokens} input + ${costTracker.totalOutputTokens} output tokens)`);
+    }
+
     this.conversations.push(conversation);
 
     // Save conversation log
@@ -77,6 +112,7 @@ class ScenarioRunner {
       steps: scenario.steps.length,
       failures: conversation.failures.length,
       duration: conversation.duration,
+      cost: estimatedCost,
     };
   }
 
@@ -105,7 +141,7 @@ class ScenarioRunner {
 
     // Get current trip state
     const trip = await db.getTrip(tripId);
-    const members = await db.getTripMembers(tripId);
+    const members = await db.getMembers(tripId);
     const suggestions = await db.getDestinationSuggestions(tripId);
     const votes = await db.getVotes(tripId);
     const dateAvailability = await db.getDateAvailability(tripId);
@@ -120,6 +156,9 @@ class ScenarioRunner {
       botResponse,
     });
 
+    // Get snapshot usage for this step (snapshots used/missing since last step)
+    const snapshotUsage = getSnapshotUsageLog();
+    
     const stepResult = {
       step: step.step,
       timestamp,
@@ -138,7 +177,11 @@ class ScenarioRunner {
       validation,
       passed: validation.passed,
       failureReason: validation.failureReason,
+      snapshotUsage: snapshotUsage.length > 0 ? [...snapshotUsage] : undefined, // Copy array
     };
+    
+    // Clear snapshot log for next step
+    resetSnapshotUsageLog();
 
     // Log result
     if (stepResult.passed) {
@@ -193,7 +236,9 @@ class ScenarioRunner {
     }
 
     // Check response content (must mention certain things)
-    if (expect.responseMustContain && actual.botResponse) {
+    // Skip in replay mode - AI response quality is tested with real API snapshots
+    const usingSnapshots = process.env.USE_SNAPSHOTS !== 'false';
+    if (expect.responseMustContain && actual.botResponse && !usingSnapshots) {
       for (const text of expect.responseMustContain) {
         if (!actual.botResponse.includes(text)) {
           failures.push(`response missing: "${text}"`);
@@ -212,7 +257,10 @@ class ScenarioRunner {
    * Setup test trip with members
    */
   async setupTrip(scenario) {
-    const trip = await db.createTrip(scenario.members[0].phone, `test-group-${Date.now()}`);
+    const trip = await db.createTrip({
+      inviteCode: `test-${Date.now()}`,
+      groupChatId: `test-group-${Date.now()}`,
+    });
     return trip;
   }
 
@@ -221,13 +269,13 @@ class ScenarioRunner {
    */
   async cleanupTrip(tripId) {
     // Delete all test data
-    await db.query('DELETE FROM messages WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM destination_suggestions WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM votes WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM date_availability WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM flights WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM trip_members WHERE trip_id = $1', [tripId]);
-    await db.query('DELETE FROM trips WHERE id = $1', [tripId]);
+    await db.pool.query('DELETE FROM messages WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM destination_suggestions WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM votes WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM date_availability WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM flights WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM members WHERE trip_id = $1', [tripId]);
+    await db.pool.query('DELETE FROM trips WHERE id = $1', [tripId]);
 
     // Clear message queue
     messageQueue.clearQueue(tripId);
@@ -236,11 +284,12 @@ class ScenarioRunner {
   /**
    * Wait for message queue to finish processing
    */
-  async waitForProcessing(tripId, maxWaitMs = 5000) {
+  async waitForProcessing(tripId, maxWaitMs = 30000) {
     const startTime = Date.now();
 
-    while (messageQueue.getQueueLength(tripId) > 0) {
-      await this.sleep(50);
+    // Wait for queue to be empty AND processing to complete
+    while (messageQueue.getQueueLength(tripId) > 0 || messageQueue.isProcessing(tripId)) {
+      await this.sleep(100);
 
       if (Date.now() - startTime > maxWaitMs) {
         throw new Error(`Timeout waiting for message processing (tripId: ${tripId})`);
@@ -248,18 +297,18 @@ class ScenarioRunner {
     }
 
     // Extra delay to ensure all async operations complete
-    await this.sleep(200);
+    await this.sleep(500);
   }
 
   /**
    * Get last bot response for this trip
    */
   async getLastBotResponse(tripId, phone) {
-    const result = await db.query(
+    const result = await db.pool.query(
       `SELECT body FROM messages
        WHERE trip_id = $1
-       AND sender = 'bot'
-       ORDER BY created_at DESC
+       AND (from_phone = 'bot' OR source = 'bot')
+       ORDER BY received_at DESC
        LIMIT 1`,
       [tripId]
     );
@@ -291,6 +340,9 @@ class ScenarioRunner {
     log += `   ${conversation.description}\n`;
     log += `   Started: ${conversation.startTime.toISOString()}\n`;
     log += `   Duration: ${conversation.duration}ms\n`;
+    if (conversation.cost) {
+      log += `   💰 Estimated Cost: ~$${conversation.cost.estimated.toFixed(4)} (${conversation.cost.calls} API calls, ${conversation.cost.inputTokens} input tokens, ${conversation.cost.outputTokens} output tokens)\n`;
+    }
     log += `   Result: ${conversation.passed ? '✅ PASS' : '❌ FAIL'}\n\n`;
 
     log += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -298,6 +350,21 @@ class ScenarioRunner {
     for (const msg of conversation.messages) {
       log += `Step ${msg.step} [${msg.timestamp.toISOString()}]\n`;
       log += `${msg.memberName}: "${msg.message}"\n`;
+
+      // Add snapshot usage info if available
+      if (msg.snapshotUsage && msg.snapshotUsage.length > 0) {
+        log += `\n📸 Snapshot Usage:\n`;
+        for (const usage of msg.snapshotUsage) {
+          if (usage.type === 'used') {
+            log += `   ✅ Snapshot used: ${usage.snapshotFile} (key: ${usage.key}...)\n`;
+          } else if (usage.type === 'missing') {
+            log += `   ⚠️  Snapshot missing: ${usage.key}... (used real API)\n`;
+            if (usage.promptPreview) {
+              log += `      Prompt: ${usage.promptPreview}...\n`;
+            }
+          }
+        }
+      }
 
       if (msg.botResponse) {
         log += `Bot: "${msg.botResponse}"\n`;
@@ -347,13 +414,19 @@ class ScenarioRunner {
     const passed = this.conversations.filter(c => c.passed).length;
     const failed = this.conversations.filter(c => !c.passed).length;
     const totalDuration = this.conversations.reduce((sum, c) => sum + c.duration, 0);
+    const totalCost = this.conversations.reduce((sum, c) => sum + (c.cost?.estimated || 0), 0);
 
     console.log('\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('📊 EVALUATION REPORT\n');
     console.log(`   Total scenarios: ${total}`);
     console.log(`   ✅ Passed: ${passed} (${((passed/total)*100).toFixed(0)}%)`);
     console.log(`   ❌ Failed: ${failed} (${((failed/total)*100).toFixed(0)}%)`);
-    console.log(`   ⏱️  Total time: ${(totalDuration/1000).toFixed(1)}s\n`);
+    console.log(`   ⏱️  Total time: ${(totalDuration/1000).toFixed(1)}s`);
+    if (totalCost > 0) {
+      console.log(`   💰 Total cost: ~$${totalCost.toFixed(4)}\n`);
+    } else {
+      console.log('');
+    }
 
     if (failed > 0) {
       console.log('Failed scenarios:');

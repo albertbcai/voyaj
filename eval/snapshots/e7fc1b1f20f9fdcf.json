@@ -1,0 +1,9 @@
+{
+  "response": "🎉 DESTINATION LOCKED! Tokyo wins with 2/3 votes! We have Sarah and Mike IN for Tokyo. Just waiting on Alex to confirm. 🌏✈️ Next up: Let's pick our travel dates! Who has some potential timeframes in mind?",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:39:11.182Z"
+  }
+}

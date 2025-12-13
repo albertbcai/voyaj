@@ -195,7 +195,7 @@ export async function createDestinationSuggestion(tripId, memberId, destination)
   const result = await pool.query(
     `INSERT INTO destination_suggestions (trip_id, member_id, destination)
      VALUES ($1, $2, $3)
-     ON CONFLICT (trip_id, member_id, destination) DO NOTHING
+     ON CONFLICT ON CONSTRAINT unique_destination_suggestion DO NOTHING
      RETURNING *`,
     [tripId, memberId, destination]
   );

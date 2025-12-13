@@ -1,0 +1,9 @@
+{
+  "response": "Hey there, Mike! I'm Voyaj, your friendly trip coordinator. Glad to have you on board! \n\nWe're currently in the gathering destination ideas phase, so feel free to suggest any places that excite you. I'll be keeping track of all the suggestions - the more ideas, the better!\n\nIf you have any other questions, just let me know. I'm here to help keep things organized and moving forward.",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:22:19.521Z"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "response": "I love sushi too! Tokyo is an amazing choice - the food and culture there are incredible. Let's get planning the details for our Tokyo trip. Who's excited to start looking at flights and hotels? Reply with a thumbs up emoji if you're ready to dive in!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:27:32.582Z"
+  }
+}

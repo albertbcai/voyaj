@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"isVote\": true,\n  \"intent\": \"vote\",\n  \"optionName\": \"Tokyo\"\n}",
+  "metadata": {
+    "prompt": "User sent this message in response to a poll: \"1 - I love sushi so Tokyo is perfect\"\n\nPoll options:\n",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:27:31.377Z"
+  }
+}

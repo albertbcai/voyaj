@@ -897,6 +897,180 @@ npm test
 
 ## 📋 Additional Technical Debt
 
+### Eval Framework Improvements
+- [ ] **Ambiguous name handling with context** - Research and improve
+  - **Issue:** Names like "April" are ambiguous (could be name or month)
+  - **Question:** Does having existing members (context) help disambiguate?
+  - **Current:** Test removed, needs investigation
+  - **Considerations:**
+    - Is first message from a number more likely to be a name?
+    - Should we use message order as a signal?
+    - Or accept ambiguity and handle gracefully?
+  - **Files:** `eval/agents/coordinator.eval.js`, `src/agents/coordinator.js`
+
+### Responder Agent Refactoring (Major Technical Debt)
+
+- [ ] **#16: Responder Agent needs major refactoring** - Code quality and maintainability issues
+  - **Issue:** Responder Agent code is messy, hard to maintain, and has multiple responsibilities
+  - **Problems:**
+    1. **Massive system prompt** (180+ lines) - Hard to maintain, test, and understand
+       - Contains tons of rules, examples, edge cases all in one giant string
+       - Difficult to modify without breaking things
+       - No separation of concerns
+    2. **Complex `shouldSendMessage` method** (150+ lines) - Too many responsibilities
+       - Nested conditionals, pattern matching, time-based logic all mixed together
+       - Hard-coded regex patterns scattered throughout
+       - Multiple time windows (60s, 90s, 3min) with similar logic duplicated
+       - Hard to test individual decision paths
+    3. **Complex `buildTripState` method** - Lots of conditional logic
+       - Stage-specific state building with lots of conditionals
+       - Hard to understand what state is available when
+    4. **Multiple responsibilities** - Does too many things:
+       - Decision making (should respond?)
+       - Response crafting (what to say?)
+       - Message sending (how to send?)
+       - State building (what's the context?)
+    5. **Hacky reasoning detection** - Lines 89-96 detect when AI returns reasoning instead of response
+       - Shouldn't need this if prompt was clearer
+    6. **Special case handling** - Poll started gets special treatment (lines 53-64)
+       - Should be handled more generically
+  - **Impact:** 
+    - Hard to test (can't test decision logic in isolation)
+    - Hard to modify (afraid to change anything)
+    - Hard to understand (what does it actually do?)
+    - Bugs likely hiding in complex conditionals
+  - **Proposed Refactoring:**
+    1. **Extract decision logic** - Create separate classes/modules:
+       - `ResponseDecisionEngine` - Clean decision logic with testable rules
+       - `ConversationAnalyzer` - Pattern detection, time-based logic
+       - `StateBuilder` - Trip state construction
+    2. **Break up system prompt** - Use template system:
+       - Separate prompts for different scenarios (taking control, answering questions, etc.)
+       - Build prompts dynamically based on context
+       - Make rules more modular and testable
+    3. **Extract patterns** - Move regex patterns to constants/config
+    4. **Simplify time logic** - Create helper functions for time-based checks
+    5. **Better error handling** - More consistent error handling throughout
+  - **Files:** `src/agents/responder.js`
+  - **Priority:** High (affects maintainability and testability)
+  - **Estimated Time:** 8-12 hours for full refactor
+  - **Note:** This is why Responder Agent tests were deferred - code needs refactoring first
+
+### Agent Bugs (Found via Agent Isolation Tests)
+
+#### Voting Agent Bugs
+- [ ] **#12: Invalid option numbers parsed as votes** - Validation needed before AI parsing
+  - **Issue:** AI incorrectly parses invalid option numbers ("4", "0") as valid votes
+  - **Test Results:** 
+    - "4" → Expected `null`, got `Paris` (should reject invalid option)
+    - "0" → Expected `null`, got `Tokyo` (should reject invalid option)
+  - **Root Cause:** No validation check for option number bounds before AI parsing
+  - **Fix:** Add numeric validation in `parseVote` to check if number is within valid range (1 to options.length) before calling AI
+  - **Files:** `src/agents/voting.js`, `eval/agents/voting.eval.js`
+  - **Priority:** Medium (edge case, but could confuse users)
+
+#### Parser Agent Bugs
+- [ ] **#13: Date parsing defaults to 2023 instead of current/future year** - Year context missing
+  - **Issue:** AI parses dates as 2023 instead of 2025 (731 days off)
+  - **Test Results:**
+    - "March 15-22" → Expected `2025-03-15`, got `2023-03-15`
+    - "April 1 to 10" → Expected `2025-04-01`, got `2023-04-01`
+    - "March 1 - April 5" → Expected `2025-03-01`, got `2023-03-01`
+  - **Root Cause:** No reference year provided to AI, defaults to past year
+  - **Fix:** Provide current year or reference date in prompt to ensure dates are parsed as future dates
+  - **Files:** `src/agents/parser.js`, `eval/agents/parser.eval.js`
+  - **Priority:** High (affects all date parsing accuracy)
+
+- [ ] **#14: Relative dates parsed as "flexible" instead of date ranges** - Missing relative date handling
+  - **Issue:** Relative dates like "next week" and "late May" are parsed as "flexible" instead of actual date ranges
+  - **Test Results:**
+    - "next week" → Expected `date_range` with dates, got `flexible`
+    - "late May" → Expected `date_range` with dates, got `flexible`
+  - **Expected Behavior:** Should parse to specific dates (based on reference date) and set `needsConfirmation: true`
+  - **Root Cause:** AI prompt doesn't handle relative dates, defaults to "flexible"
+  - **Fix:** 
+    - Update prompt to handle relative dates ("next week", "late May", etc.)
+    - Provide reference date in prompt
+    - Parse to actual date ranges and add `needsConfirmation: true` flag
+  - **Files:** `src/agents/parser.js`, `eval/agents/parser.eval.js`
+  - **Priority:** High (important for user experience)
+
+- [ ] **#15: Relative date confirmation tests failing due to test setup** - Test infrastructure bug
+  - **Issue:** Relative date confirmation tests skipped with "db is not defined" error
+  - **Test Results:** 2 tests skipped (future feature tests)
+  - **Root Cause:** Test setup missing database import or initialization
+  - **Fix:** Fix test setup in `eval/agents/parser.eval.js` to properly initialize database for relative date confirmation tests
+  - **Files:** `eval/agents/parser.eval.js`
+  - **Priority:** Low (test infrastructure only, doesn't affect production)
+
+### Test Framework Bugs (Found via Eval Scenarios)
+
+- [ ] **#16: Test runner voteCount includes all votes instead of filtering by poll type** - Test infrastructure bug
+  - **Issue:** Test runner counts all votes (destination + dates) instead of filtering by current poll type
+  - **Test Failure:** `large-date-overlap-requires-voting` Step 12: Expected `voteCount: 1` (date votes only), got `3` (all votes)
+  - **Root Cause:** `eval/lib/scenario-runner.js` line 146 calls `db.getVotes(tripId)` without poll type filter, then line 234 compares total count
+  - **Expected Behavior:** When checking vote count during `voting_dates` stage, should only count `poll_type = 'dates'` votes
+  - **Fix:** 
+    - Determine current poll type from trip stage (`voting_destination` → `'destination'`, `voting_dates` → `'dates'`)
+    - Call `db.getVotes(tripId, pollType)` with appropriate filter
+    - Or use `db.getVoteCount(tripId, pollType)` which already filters correctly
+  - **Files:** `eval/lib/scenario-runner.js` (lines 146, 174, 234)
+  - **Priority:** Medium (affects test accuracy, doesn't affect production)
+
+- [ ] **#17: System auto-transitions to tracking_flights when both destination and dates are set** - State machine behavior
+  - **Issue:** System automatically transitions to `tracking_flights` immediately after dates are set (if destination already set)
+  - **Test Failure:** `large-date-overlap-requires-voting` Step 13: Expected `stage: planning`, got `tracking_flights`
+  - **Root Cause:** `src/state/stateMachine.js` lines 259-269 in `checkPlanningTransitions()` auto-transitions when `hasDestination && hasDates`
+  - **Expected Behavior:** Should stay in `planning` after dates are set (per test expectation)
+  - **Question:** Is auto-transition correct behavior, or should system wait for explicit confirmation?
+  - **Fix Options:**
+    1. Remove auto-transition - Stay in `planning` until explicit action
+    2. Only transition from `planning` state - Don't transition if coming from `voting_dates`
+    3. Add delay/confirmation - Wait for user confirmation before transitioning
+  - **Files:** `src/state/stateMachine.js` (lines 254-345)
+  - **Priority:** Medium (needs product decision on correct behavior)
+
+- [ ] **#18: Flexible dates don't trigger date voting when all members submit** - Date availability logic
+  - **Issue:** When members submit "flexible" or "I'm flexible in April", system doesn't transition to `voting_dates` even when all members have submitted
+  - **Test Failure:** `flexible-dates` Step 8: Expected `stage: voting_dates`, got `planning`
+  - **Root Cause:** Need to investigate:
+    - How "flexible" dates are parsed and saved (check `src/agents/parser.js`)
+    - How `getDateAvailabilityCount()` counts flexible dates (check `src/db/queries.js`)
+    - Whether `checkPlanningTransitions()` properly handles flexible dates (check `src/state/stateMachine.js`)
+  - **Expected Behavior:** Flexible dates should count as valid availability, and when all members submit (even if all flexible), should trigger date voting or handle specially
+  - **Fix:** 
+    - Verify flexible dates are counted in `dateAvailabilityCount`
+    - Ensure `checkPlanningTransitions()` triggers voting when all dates submitted (including flexible)
+    - Or handle special case: if everyone is flexible, skip voting and allow direct date selection
+  - **Files:** `src/agents/parser.js`, `src/db/queries.js`, `src/state/stateMachine.js`
+  - **Priority:** Medium (affects user experience with flexible dates)
+
+- [ ] **#19: Multiple destinations in one message triggers voting immediately** - Voting trigger logic
+  - **Issue:** When one member suggests multiple destinations ("Tokyo or Paris"), system immediately starts voting if suggestion count >= member count
+  - **Test Failure:** `multiple-destinations-one-message` Step 3: Expected `stage: planning`, got `voting_destination`
+  - **Root Cause:** `src/state/stateMachine.js` line 276: `allDestinationsSuggested = destinationSuggestionCount >= memberCount` triggers when 2 suggestions from 1 member with 2 total members
+  - **Expected Behavior:** Test expects voting to wait until multiple members suggest (not just one member suggesting multiple)
+  - **Question:** Is current behavior correct (vote when enough suggestions exist) or should it require suggestions from multiple members?
+  - **Fix Options:**
+    1. Update test expectation - Accept that voting starts when enough suggestions exist (even from one member)
+    2. Change voting logic - Require suggestions from multiple members (e.g., `uniqueMemberCount >= 2`)
+    3. Change test scenario - Have Sarah suggest only 1 destination, then Mike suggests another
+  - **Files:** `src/state/stateMachine.js` (line 276), `eval/scenarios/definitions/multiple-destinations-one-message.json`
+  - **Priority:** Low (needs product decision on correct behavior)
+
+- [ ] **#20: New destination suggestions not accepted during voting** - Voting behavior
+  - **Issue:** When voting has started, new destination suggestions (e.g., "Bali" during `voting_destination` stage) are ignored/treated as invalid votes
+  - **Test Failure:** `multiple-destinations-one-message` Step 4: Expected `destinationSuggestions: [Tokyo, Paris, Bali]`, got `[Tokyo, Paris]`
+  - **Root Cause:** Once in `voting_destination` stage, voting agent tries to parse "Bali" as a vote, fails, and skips it
+  - **Expected Behavior:** Test expects system to accept new suggestions even during voting
+  - **Question:** Should new suggestions be accepted during voting, or is current behavior (lock options once voting starts) correct?
+  - **Fix Options:**
+    1. Update test expectation - Accept that new suggestions aren't accepted during voting
+    2. Change system behavior - Allow new suggestions during voting (adds complexity, may confuse users)
+    3. Change test scenario - Have Mike suggest "Bali" before voting starts
+  - **Files:** `src/agents/voting.js`, `eval/scenarios/definitions/multiple-destinations-one-message.json`
+  - **Priority:** Low (needs product decision on correct behavior)
+
 ### From PRD Additional Questions
 - [ ] **Environment variables & secrets** - Secure management
   - Create `.env.example` with required variables

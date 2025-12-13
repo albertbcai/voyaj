@@ -1,0 +1,9 @@
+{
+  "response": "{\n  \"isName\": true,\n  \"reasoning\": \"The message 'John Smith' is a person's name, as it consists of a first name and a last name, which is a common format for a person's name.\"\n}",
+  "metadata": {
+    "prompt": "Is this message a person's name (for joining a group), or is it something else (question, destinatio",
+    "systemPrompt": null,
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:24:42.133Z"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "response": "Hey Mike! 👋 Welcome to our trip planning group! We're just getting started - go ahead and tell us what kind of trip you're looking to take. 🌍✈️",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:38:36.209Z"
+  }
+}

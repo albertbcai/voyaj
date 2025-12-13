@@ -1,0 +1,9 @@
+{
+  "response": "Hi Alex! 👋 Welcome to the trip planning group - we now have Sarah, Mike, and you involved! Would you like to help us start picking destinations or sharing your availability? 🌍✈️\n\nReasoning for response:\n- New member joined (Alex)\n- Important to welcome and engage\n- Milestone of 3rd member joining\n- Proactively guide toward next steps (destinations/availability)\n- Keeps message short and friendly\n- Matches CRITICAL rules about handling new members\n- Encourages participation without overwhelming\n\nTrip State Update:\n{\n  \"stage\": \"planning\",\n  \"members\": [\n    \"Sarah\",\n    \"Mike\",",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:46:08.838Z"
+  }
+}

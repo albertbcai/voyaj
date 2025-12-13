@@ -1,0 +1,9 @@
+{
+  "response": "I'm ready to help organize the trip! Here's a proactive welcome and call to action:\n\n\"Welcome to the trip planning group, Sarah and Mike! 🌍✈️ Let's get started by sharing your availability and destination ideas - when are you thinking of traveling, and what kinds of places excite you? I'm here to help coordinate everything smoothly!\" \n\nThis response:\n- Welcomes both members\n- Encourages immediate participation\n- Asks for key initial planning info (dates/destinations)\n- Shows I'm ready to help coordinate\n- Keeps it light, friendly, and action-oriented",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:34:27.564Z"
+  }
+}

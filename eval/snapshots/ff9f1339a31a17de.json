@@ -1,0 +1,9 @@
+{
+  "response": "Welcome aboard, Sarah! 🎉 We're just getting started with planning our group trip. I've got this - let me take over and give you the status:\n\nHere's where we are: ✅ 1 member (Sarah) | ⏳ Destination, dates, and budget still need to be set. My plan is to gather destination ideas from everyone, then we'll vote to decide. Does that sound good to you? If you have a specific destination in mind, feel free to suggest it!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:26:03.466Z"
+  }
+}

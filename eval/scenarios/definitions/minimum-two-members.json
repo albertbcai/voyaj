@@ -54,7 +54,7 @@
       "from": "+15552222222",
       "message": "1",
       "expect": {
-        "stage": "destination_set",
+        "stage": "planning",
         "destination": "Tokyo"
       }
     }

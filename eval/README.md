@@ -20,20 +20,46 @@ Automated testing framework for Voyaj's multi-agent AI system. Tests state trans
 
 ## 🚀 Quick Start
 
-### Run All Scenarios
+### Run All Scenarios (Snapshot Mode - Default)
 ```bash
-npm run eval
+npm run eval  # Fast, free, uses saved snapshots
+```
+
+### Record Snapshots (One-Time Setup)
+```bash
+npm run eval:record  # Records real API responses to snapshots
+```
+
+### Run with Real API (For AI Quality Testing)
+```bash
+npm run eval:live  # Tests actual AI responses (bypasses snapshots)
 ```
 
 ### Run Specific Scenario
 ```bash
-npm run eval happy-path-3-members
+npm run eval minimum-two-members  # Uses snapshots (default)
+npm run eval:live minimum-two-members  # Real API mode
 ```
 
 ### View Results in UI
 ```bash
 open eval/ui/index.html
 ```
+
+### Testing Modes
+
+**Snapshot Mode (Default)** - Fast, free, deterministic
+- Uses saved API responses from `eval/snapshots/`
+- Tests: State machine, logic, data processing, AI behavior
+- Cost: $0.00 (after initial recording)
+- Use for: Development, debugging, CI/CD
+
+**Live Mode** - Tests actual AI responses
+- Tests: AI quality, tone, language, prompts
+- Cost: ~$0.02-0.05 per scenario
+- Use for: AI improvements, pre-deployment validation, recording new snapshots
+
+See [TESTING_GUIDE.md](TESTING_GUIDE.md) for detailed testing strategy.
 
 ---
 
@@ -360,16 +386,16 @@ Create `eval/scenarios/definitions/my-scenario.json`:
 
 ## 🚀 What's Next?
 
-This is **Phase 1** of the eval framework, focused on **state transitions**.
+**Phase 1: State Transitions** ✅ Complete
+- Scenario-based testing for full flows
+- State transition validation
 
-### Future Enhancements (Not Built Yet)
-
-**Phase 2: Agent Isolation Tests**
+**Phase 2: Agent Isolation Tests** ✅ Complete
 - Test individual agent AI calls (intent detection, vote parsing, etc.)
 - Measure classification accuracy
-- Find bugs before they cascade to state issues
+- Run with `npm run eval:agents`
 
-**Phase 3: Response Quality Evaluation**
+**Phase 3: Response Quality Evaluation** (Future)
 - Grade all bot responses
 - Check for factual correctness, completeness, tone
 - Aggregate feedback: "85% of responses mentioned pending members"
@@ -440,7 +466,7 @@ npm run eval my-edge-case
 → Check `eval/scenarios/output/scenario-name.log` or view in UI
 
 **Can I test just one agent?**
-→ Not yet - Phase 2 will add agent isolation tests
+→ Yes! Run `npm run eval:agents` to test individual agents in isolation
 
 **How do I speed up tests?**
 → Run specific scenarios instead of all: `npm run eval scenario-name`

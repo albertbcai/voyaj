@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"intent\": \"date_availability\",\n  \"confidence\": \"high\",\n  \"reasoning\": \"The message 'I'm flexible in April' indicates that the user is providing information about their date availability, which is relevant for the trip planning stage.\"\n}",
+  "metadata": {
+    "prompt": "You are analyzing a group chat message to determine user intent for a trip planning app.\n\nTrip stage",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:23:25.913Z"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"isVote\": true,\n  \"intent\": \"vote\",\n  \"optionName\": \"Tokyo\"\n}",
+  "metadata": {
+    "prompt": "User sent this message in response to a poll: \"Tokyo\"\n\nPoll options:\n1. Tokyo\n2. Bali\n3. Paris\n\nIs t",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:26:38.538Z"
+  }
+}

@@ -1,6 +1,5 @@
 import { BaseAgent } from './base.js';
 import * as db from '../db/queries.js';
-import { twilioClient } from '../utils/twilio.js';
 import { callClaudeWithSystemPrompt } from '../utils/claude.js';
 import { emitEvent, EVENTS } from '../state/eventEmitter.js';
 import { checkStateTransitions } from '../state/stateMachine.js';
@@ -177,9 +176,7 @@ export class CoordinatorAgent extends BaseAgent {
         return { handoff: 'voting' };
 
       case 'tracking_flights':
-      case 'destination_set':
-      case 'dates_set':
-        console.log(`   👤 Coordinator: Tracking flights or planning stage`);
+        console.log(`   👤 Coordinator: Tracking flights stage`);
         return await this.handlePlanning(context, message);
 
       default:
@@ -207,15 +204,45 @@ export class CoordinatorAgent extends BaseAgent {
       return await this.handleMemberJoin(context, message);
     }
 
-    // This is truly the first member - send welcome message
-    // IMPORTANT: Send to the sender since there are no members yet (can't use sendToGroup)
+    // This is truly the first member - create them and send welcome message
+    // The message body should be their name
+    const name = message.body.trim();
+    
+    // Validate name with AI
+    const isLikelyName = await this.validateNameWithAI(name, []);
+    
+    if (!isLikelyName) {
+      // Doesn't look like a name - send welcome message asking for name
+      await db.updateTrip(trip.id, { stage: 'collecting_members', stage_entered_at: new Date() });
+      return {
+        success: true,
+        output: {
+          type: 'conversation',
+          message: "What's up! 🎉 Voyaj here - I'm gonna help you all plan an awesome trip.\n\nFirst things first: reply with your name so I know who's in. Once we hit 2 people, we'll start picking where to go!\n\nReady? Let's do this! 🚀",
+          sendTo: 'individual',
+        },
+      };
+    }
+    
+    // Create the first member
+    console.log(`   👤 Coordinator: Creating first member - trip: ${trip.id}, phone: ${message.from}, name: "${name}"`);
+    const member = await db.createMember(trip.id, message.from, name);
+    console.log(`   ✅ Coordinator: First member created - id: ${member.id}, name: ${member.name}`);
+    
+    // Transition to collecting_members stage
     await db.updateTrip(trip.id, { stage: 'collecting_members', stage_entered_at: new Date() });
     
+    // Emit event
+    emitEvent(EVENTS.MEMBER_JOINED, { tripId: trip.id, memberId: member.id, name });
+    
+    // Send welcome message
     return {
       success: true,
       output: {
-        type: 'conversation',
-        message: "What's up! 🎉 Voyaj here - I'm gonna help you all plan an awesome trip.\n\nFirst things first: reply with your name so I know who's in. Once we hit 2 people, we'll start picking where to go!\n\nReady? Let's do this! 🚀",
+        type: 'member_joined',
+        memberName: name,
+        memberCount: 1,
+        allMembers: [member],
         sendTo: 'individual',
       },
     };
@@ -386,16 +413,26 @@ export class CoordinatorAgent extends BaseAgent {
     if (bookedCount === totalMembers) {
       // Everyone booked - celebrate and transition
       await db.updateTrip(trip.id, { all_flights_booked: true, stage: 'trip_confirmed', stage_entered_at: new Date() });
-      await this.sendToGroup(trip.id, `🎊 EVERYONE'S BOOKED!\n\n${members.map(m => {
+      const { checkStateTransitions } = await import('../state/stateMachine.js');
+      await checkStateTransitions(trip.id);
+      
+      const message = `🎊 EVERYONE'S BOOKED!\n\n${members.map(m => {
         const flight = flights.find(f => f.member_id === m.id);
         if (flight?.airline && flight?.flight_number) {
           return `✅ ${m.name} - ${flight.airline} ${flight.flight_number}`;
         }
         return `✅ ${m.name} - Booked`;
-      }).join('\n')}\n\n${trip.destination} ${trip.start_date ? new Date(trip.start_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : ''} is HAPPENING! 🎉\n\nI'll check in 2 weeks before to help with logistics. Have fun!`);
-      const { checkStateTransitions } = await import('../state/stateMachine.js');
-      await checkStateTransitions(trip.id);
-      return;
+      }).join('\n')}\n\n${trip.destination} ${trip.start_date ? new Date(trip.start_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : ''} is HAPPENING! 🎉\n\nI'll check in 2 weeks before to help with logistics. Have fun!`;
+      
+      // Return output for orchestrator to send
+      return {
+        success: true,
+        output: {
+          type: 'flight_booking_complete',
+          message,
+          sendTo: 'group',
+        },
+      };
     }
 
     // Calculate time since dates were locked
@@ -405,21 +442,46 @@ export class CoordinatorAgent extends BaseAgent {
     // Escalation ladder
     if (bookedCount === 0 && hoursSinceLocked > 72) {
       // No one booked after 3 days
-      await this.sendToGroup(trip.id, '🚨 Prices are going up! Who\'s booking first? Don\'t wait too long!');
       await db.updateTrip(trip.id, { nudge_count: (trip.nudge_count || 0) + 1, last_nudge_at: new Date() });
+      return {
+        success: true,
+        output: {
+          type: 'flight_booking_nudge',
+          message: '🚨 Prices are going up! Who\'s booking first? Don\'t wait too long!',
+          sendTo: 'group',
+        },
+      };
     } else if (bookedCount > 0 && unbooked.length > 0) {
       // Some booked, some haven't
       if (hoursSinceLocked > 24 && (trip.nudge_count || 0) < 3) {
         const unbookedNames = unbooked.map(m => m.name).join(', ');
-        await this.sendToGroup(trip.id, `✅ ${bookedCount}/${totalMembers} confirmed! 🎉\n\n${unbookedNames} - everyone's booking. Don't miss out!`);
         await db.updateTrip(trip.id, { nudge_count: (trip.nudge_count || 0) + 1, last_nudge_at: new Date() });
+        return {
+          success: true,
+          output: {
+            type: 'flight_booking_nudge',
+            message: `✅ ${bookedCount}/${totalMembers} confirmed! 🎉\n\n${unbookedNames} - everyone's booking. Don't miss out!`,
+            sendTo: 'group',
+          },
+        };
       }
     } else if (unbooked.length === 1) {
       // One person left
       const lastPerson = unbooked[0];
-      await twilioClient.sendSMS(lastPerson.phone_number, `You're the last one! Everyone's waiting. What's holding you back?`);
       await db.updateTrip(trip.id, { nudge_count: (trip.nudge_count || 0) + 1, last_nudge_at: new Date() });
+      return {
+        success: true,
+        output: {
+          type: 'flight_booking_nudge',
+          message: `You're the last one! Everyone's waiting. What's holding you back?`,
+          sendTo: 'individual',
+          recipient: lastPerson.phone_number,
+        },
+      };
     }
+    
+    // No nudge needed
+    return { success: true, ignored: true };
   }
 
   async detectQuestionDirection(messageBody, allMembers) {
@@ -792,12 +854,6 @@ Examples:
     return { success: true, ignored: true };
   }
 
-  async sendToGroup(tripId, message) {
-    const members = await db.getMembers(tripId);
-    for (const member of members) {
-      await twilioClient.sendSMS(member.phone_number, message);
-    }
-  }
 
   async getTripSummary(trip, members) {
     const memberNames = members.map(m => m.name).join(', ');

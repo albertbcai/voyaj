@@ -1,0 +1,9 @@
+{
+  "response": "Great! Sarah suggested Tokyo. 🎉 We now have 1 destination idea - let's keep the suggestions coming, everyone! I'm tracking the progress so far, but feel free to propose any other places you'd love to visit.",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:19:17.276Z"
+  }
+}

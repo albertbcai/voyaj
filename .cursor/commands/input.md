@@ -1,0 +1,1 @@
+What are the biggest most important ambiguities you have that you need my input for? When you give options, please give me what your recommended option is among your suggestions. Please go through these one by one in order of importance. Include examples of the implications of your decisions when possible. 

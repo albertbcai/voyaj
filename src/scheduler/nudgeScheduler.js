@@ -135,7 +135,21 @@ class NudgeScheduler {
 
   async handleFlightNudging(trip, rules, timeSinceStageEntered) {
     // Flight nudging is handled by coordinator agent
-    await coordinatorAgent.checkFlightBookingStatus(trip);
+    const result = await coordinatorAgent.checkFlightBookingStatus(trip);
+    
+    // If coordinator returned output, send the message
+    if (result && result.output && result.output.message) {
+      if (result.output.sendTo === 'group') {
+        const members = await db.getMembers(trip.id);
+        await db.createMessage(trip.id, 'bot', result.output.message, trip.group_chat_id, 'bot');
+        for (const member of members) {
+          await twilioClient.sendSMS(member.phone_number, result.output.message);
+        }
+      } else if (result.output.recipient) {
+        await twilioClient.sendSMS(result.output.recipient, result.output.message, trip.id, trip.group_chat_id);
+        await db.createMessage(trip.id, 'bot', result.output.message, trip.group_chat_id, 'bot');
+      }
+    }
   }
 
   async sendNudge(trip, urgency) {

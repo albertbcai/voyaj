@@ -1,0 +1,9 @@
+{
+  "response": "👋 Hey there, Alex! Thanks for joining our trip planning group. We now have 3 members confirmed - Sarah, Mike, and you. This is great momentum! Let's keep the destination and date ideas coming from everyone. I'll be keeping track of where we're at. Feel free to share any places you'd love to explore!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:19:13.114Z"
+  }
+}

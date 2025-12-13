@@ -1,0 +1,10 @@
+[
+  "destination-vote-tie.json",
+  "flexible-dates.json",
+  "happy-path-3-members.json",
+  "large-date-overlap-requires-voting.json",
+  "minimum-two-members.json",
+  "multiple-destinations-one-message.json",
+  "vote-with-destination-name.json",
+  "vote-with-enthusiasm.json"
+]

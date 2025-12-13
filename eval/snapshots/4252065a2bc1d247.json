@@ -1,0 +1,9 @@
+{
+  "response": "🎉 Awesome, Tokyo is locked in! We have both Sarah and Mike confirming Tokyo as our destination. Now let's nail down our travel dates - when are you both available? 📅 Thinking March, April, or May? Reply with your potential date ranges!\n\nThis response:\n- Confirms destination vote (both Sarah and Mike voted 1/Tokyo)\n- Clearly states who's IN (Sarah and Mike)\n- Moves conversation to next step (dates)\n- Keeps it friendly and proactive\n- Offers date range suggestions to spark discussion",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:34:48.103Z"
+  }
+}

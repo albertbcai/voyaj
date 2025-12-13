@@ -1,0 +1,9 @@
+{
+  "response": "🎉 Destination LOCKED! Tokyo wins with 2/2 votes - unanimous decision! 🇯🇵 Now let's set our travel dates. Who's available when? Drop your potential date ranges!\n\nThis response:\n- Celebrates the destination win\n- Shows how we reached majority (2/2 votes)\n- Proactively moves to next planning stage (dates)\n- Keeps it enthusiastic and action-oriented\n- Encourages immediate participation\n- Uses clear, structured communication",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:34:48.395Z"
+  }
+}

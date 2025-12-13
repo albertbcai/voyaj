@@ -55,6 +55,10 @@ class MessageQueue {
     return (this.queues.get(tripId) || []).length;
   }
 
+  isProcessing(tripId) {
+    return this.processing.has(tripId);
+  }
+
   clearQueue(tripId) {
     this.queues.delete(tripId);
     this.processing.delete(tripId);

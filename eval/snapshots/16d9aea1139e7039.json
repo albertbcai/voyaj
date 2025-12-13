@@ -1,0 +1,9 @@
+{
+  "response": "{\n  \"isName\": true,\n  \"reasoning\": \"The message 'My name is Sarah' indicates that this is a person's name, likely for the purpose of joining a group or introducing themselves.\"\n}",
+  "metadata": {
+    "prompt": "Is this message a person's name (for joining a group), or is it something else (question, destinatio",
+    "systemPrompt": null,
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:24:40.601Z"
+  }
+}

@@ -1,6 +1,5 @@
 import { BaseAgent } from './base.js';
 import * as db from '../db/queries.js';
-import { twilioClient } from '../utils/twilio.js';
 import { callClaudeWithSystemPrompt } from '../utils/claude.js';
 
 /**
@@ -19,11 +18,12 @@ export class ResponderAgent extends BaseAgent {
   }
 
   /**
-   * Format and send a response based on agent output
+   * Format a response based on agent output
    * Uses AI to craft intelligent, context-aware messages
+   * Returns message to be sent (or null if skipped)
    */
-  async formatAndSend(agentOutput, context, message) {
-    this.logEntry('formatAndSend', context, message);
+  async formatResponse(agentOutput, context, message) {
+    this.logEntry('formatResponse', context, message);
     
     try {
     const { trip, allMembers } = context;
@@ -46,30 +46,35 @@ export class ResponderAgent extends BaseAgent {
     
     const conversationText = conversationHistory.join('\n');
     
-    // Get current trip state details
+    // Build trip state by fetching data directly
     const tripState = await this.buildTripState(context, agentOutput);
     
-    // Special handling for poll_started - use voting agent's createVotingMessage directly
-    if (agentOutput.type === 'poll_started') {
-      const { VotingAgent } = await import('./voting.js');
-      const votingAgent = new VotingAgent();
-      const response = votingAgent.createVotingMessage(
-        agentOutput.options,
-        agentOutput.pollType,
-        agentOutput.memberCount,
-        agentOutput.majorityThreshold
-      );
-      await this.sendToGroup(trip.id, response, message?.groupChatId || trip.group_chat_id);
-      return { success: true };
+    // If agent output already has a formatted message (e.g., poll_started), use it
+    if (agentOutput.message) {
+      const sendTo = agentOutput.sendTo || 'group';
+      const recipient = agentOutput.recipient || null;
+      this.log('info', `Using pre-formatted message from agent output`);
+      this.logExit('formatResponse', { message: agentOutput.message, sendTo, recipient });
+      return {
+        message: agentOutput.message,
+        sendTo,
+        recipient,
+        reasoning: `Using pre-formatted message from ${agentOutput.type}`,
+      };
     }
     
     // Use AI to decide if we should respond and what to say
-    const shouldRespond = await this.shouldSendMessage(agentOutput, context, recentMessages, message);
+    const shouldRespondResult = await this.shouldSendMessage(agentOutput, context, recentMessages, message);
     
-    if (!shouldRespond) {
-      this.log('info', 'Decided to skip this message (not needed or would be spam)');
-      const result = { success: true, skipped: true };
-      this.logExit('formatAndSend', result);
+    if (!shouldRespondResult.shouldRespond) {
+      const result = {
+        message: null,
+        sendTo: agentOutput.sendTo || 'group',
+        recipient: agentOutput.recipient || null,
+        reasoning: shouldRespondResult.reasoning || 'Decided to skip this message (not needed or would be spam)',
+      };
+      this.log('info', result.reasoning);
+      this.logExit('formatResponse', result);
       return result;
     }
     
@@ -96,34 +101,33 @@ export class ResponderAgent extends BaseAgent {
        lowerTrimmed.includes('flowing well'));
     
     if (isEmpty || isJustQuotes || isReasoning) {
-      this.log('info', `AI decided not to respond (empty/reasoning detected: "${trimmed.substring(0, 50)}...")`);
-      const result = { success: true, skipped: true };
-      this.logExit('formatAndSend', result);
+      const reasoning = `AI decided not to respond (empty/reasoning detected: "${trimmed.substring(0, 50)}...")`;
+      this.log('info', reasoning);
+      const result = {
+        message: null,
+        sendTo: agentOutput.sendTo || 'group',
+        recipient: agentOutput.recipient || null,
+        reasoning,
+      };
+      this.logExit('formatResponse', result);
       return result;
     }
     
-    // Send the AI-crafted response
-    // ALWAYS send as group message unless it's a specific individual nudge (like last person to book flights)
-    if (agentOutput.sendTo === 'group' || !agentOutput.recipient) {
-      // Send to entire group
-      await this.sendToGroup(trip.id, response, message?.groupChatId || trip.group_chat_id);
-    } else if (agentOutput.recipient) {
-      // Specific individual message (e.g., nudge to last person)
-      this.log('info', `Sending individual message to ${agentOutput.recipient}`);
-      await twilioClient.sendSMS(agentOutput.recipient, response, trip.id, trip.group_chat_id);
-      // Store bot message in database for conversation history
-      await db.createMessage(trip.id, 'bot', response, trip.group_chat_id, 'bot');
-    } else {
-      // Fallback: send to group
-      await this.sendToGroup(trip.id, response, message?.groupChatId || trip.group_chat_id);
-    }
+    // Return the AI-crafted response
+    const sendTo = agentOutput.sendTo === 'group' || !agentOutput.recipient ? 'group' : 'individual';
+    const recipient = agentOutput.recipient || null;
     
-    const result = { success: true };
-    this.logExit('formatAndSend', result);
+    const result = {
+      message: response,
+      sendTo,
+      recipient,
+      reasoning: 'Crafted intelligent response based on context',
+    };
+    this.logExit('formatResponse', result);
     return result;
     } catch (error) {
       await this.logError(error, context, message, { 
-        method: 'formatAndSend',
+        method: 'formatResponse',
         agentOutputType: agentOutput?.type,
       });
       throw error;
@@ -131,7 +135,7 @@ export class ResponderAgent extends BaseAgent {
   }
   
   /**
-   * Build comprehensive trip state information
+   * Build comprehensive trip state information by fetching data directly
    */
   async buildTripState(context, agentOutput) {
     const { trip, allMembers } = context;
@@ -153,7 +157,7 @@ export class ResponderAgent extends BaseAgent {
       datesAreSet: startDate !== null && endDate !== null,
     };
     
-    // Add stage-specific details
+    // Fetch stage-specific data directly
     if (trip.stage === 'planning' || trip.stage === 'collecting_destinations') {
       const suggestions = await db.getDestinationSuggestions(trip.id);
       state.suggestions = suggestions.map(s => s.destination);
@@ -205,7 +209,7 @@ export class ResponderAgent extends BaseAgent {
         .map(m => m.name);
     }
     
-    // Add preferences from notes
+    // Fetch preferences from notes
     const preferences = await db.getTripPreferences(trip.id);
     if (preferences) {
       state.preferences = preferences;
@@ -266,11 +270,12 @@ export class ResponderAgent extends BaseAgent {
   /**
    * Use AI to decide if we should send a message
    * Avoids spam and unnecessary responses
+   * Returns { shouldRespond: boolean, reasoning?: string }
    */
   async shouldSendMessage(agentOutput, context, recentMessages, message) {
     // Always respond to important events
     if (['poll_started', 'poll_completed', 'member_joined', 'member_joined_during_vote'].includes(agentOutput.type)) {
-      return true;
+      return { shouldRespond: true, reasoning: `Important event: ${agentOutput.type}` };
     }
     
     // Check for organizing attempts / frustration signals (HIGH PRIORITY - take control)
@@ -286,7 +291,7 @@ export class ResponderAgent extends BaseAgent {
       console.log(`   💬 Responder: Organizing attempt detected - taking control`);
       // Mark this as needing proactive control
       agentOutput.needsProactiveControl = true;
-      return true;
+      return { shouldRespond: true, reasoning: 'Organizing attempt detected - taking control' };
     }
     
     // Check recent conversation activity
@@ -309,8 +314,9 @@ export class ResponderAgent extends BaseAgent {
       });
       
       if (answered) {
-        console.log(`   💬 Responder: Question was for group member and they answered, skipping`);
-        return false;
+        const reasoning = 'Question was for group member and they answered, skipping';
+        console.log(`   💬 Responder: ${reasoning}`);
+        return { shouldRespond: false, reasoning };
       }
     }
     
@@ -330,8 +336,9 @@ export class ResponderAgent extends BaseAgent {
         const hasQuestion = message.body.includes('?');
         const mentionsVoyaj = /voyaj|bot/i.test(message.body);
         if (!hasQuestion && !mentionsVoyaj) {
-          console.log(`   💬 Responder: Group self-organizing, skipping`);
-          return false;
+          const reasoning = 'Group self-organizing, skipping';
+          console.log(`   💬 Responder: ${reasoning}`);
+          return { shouldRespond: false, reasoning };
         }
       }
     }
@@ -373,8 +380,9 @@ export class ResponderAgent extends BaseAgent {
         const isConfused = /\b(confused|stuck|help|what do we|what should|don't know)\b/i.test(message.body);
         
         if (!mentionsVoyaj && !isConfused && (!hasQuestion || agentOutput.context?.questionDirection === 'member')) {
-          console.log(`   💬 Responder: Group chatting naturally (${recentUserMessagesInLast3Min.length} messages), skipping`);
-          return false;
+          const reasoning = `Group chatting naturally (${recentUserMessagesInLast3Min.length} messages), skipping`;
+          console.log(`   💬 Responder: ${reasoning}`);
+          return { shouldRespond: false, reasoning };
         }
       }
     }
@@ -390,8 +398,9 @@ export class ResponderAgent extends BaseAgent {
           const mentionsVoyaj = /voyaj|bot/i.test(message.body);
           const isConfused = /\b(confused|stuck|help)\b/i.test(message.body);
           if (!mentionsVoyaj && !isConfused) {
-            console.log(`   💬 Responder: Just sent message recently (${Math.round(timeSinceLastMessage/1000)}s ago), skipping`);
-            return false;
+            const reasoning = `Just sent message recently (${Math.round(timeSinceLastMessage/1000)}s ago), skipping`;
+            console.log(`   💬 Responder: ${reasoning}`);
+            return { shouldRespond: false, reasoning };
           }
         }
       }
@@ -407,18 +416,19 @@ export class ResponderAgent extends BaseAgent {
       const mentionsVoyaj = /voyaj|bot/i.test(message.body);
       const isConfused = /\b(confused|stuck|help)\b/i.test(message.body);
       if (!mentionsVoyaj && !isConfused) {
-        console.log(`   💬 Responder: Multiple user messages in last 90s (${recentUserMessagesInLast90Sec.length} messages), skipping`);
-        return false;
+        const reasoning = `Multiple user messages in last 90s (${recentUserMessagesInLast90Sec.length} messages), skipping`;
+        console.log(`   💬 Responder: ${reasoning}`);
+        return { shouldRespond: false, reasoning };
       }
     }
     
     // For conversation type, check if it's actually needed
     if (agentOutput.type === 'conversation') {
       // Let it through - AI will decide in craftResponse if it should actually respond
-      return true;
+      return { shouldRespond: true, reasoning: 'Conversation type - AI will decide in craftResponse' };
     }
     
-    return true;
+    return { shouldRespond: true, reasoning: 'Default: should respond' };
   }
   
   /**
@@ -637,31 +647,4 @@ Response:`;
     }
   }
   
-  async sendToGroup(tripId, message, groupChatId = null) {
-    try {
-      const members = await db.getMembers(tripId);
-      this.log('info', `Sending to group (${members.length} members)`, {
-        messagePreview: message.substring(0, 50),
-      });
-      
-      // Store bot message in database FIRST (before sending SMS)
-      // This ensures UI sees the message immediately when polling, avoiding race conditions
-      if (members.length > 0) {
-        await db.createMessage(tripId, 'bot', message, groupChatId, 'bot');
-      }
-      
-      // Then send SMS to all members
-      for (const member of members) {
-        await twilioClient.sendSMS(member.phone_number, message);
-      }
-      
-      this.log('info', 'Message sent to group successfully');
-    } catch (error) {
-      this.log('error', 'Failed to send message to group', {
-        tripId,
-        error: error.message,
-      });
-      throw error;
-    }
-  }
 }

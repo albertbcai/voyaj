@@ -149,15 +149,30 @@ Voyaj is an SMS-based AI coordinator that:
 ### State Machine
 
 **Stages:**
-1. `created` → First message received
-2. `collecting_members` → Gathering names
-3. `voting_destination` → Destination poll active
-4. `destination_set` → Winner declared, transition to dates
-5. `voting_dates` → Date poll active
-6. `dates_set` → Dates locked, transition to planning
-7. `planning` → Flights + itinerary happening in parallel
+1. `created` → Trip just created, bot added to chat
+2. `collecting_members` → Gathering people to join the trip (minimum 2 members)
+3. `planning` → Pre-voting phase: collecting destination suggestions and/or date availability
+4. `voting_destination` → Active poll for destination
+5. `voting_dates` → Active poll for dates
+6. `tracking_flights` → Both destination and dates set, tracking flight bookings
+7. `trip_confirmed` → All flights booked, waiting for trip to start
 8. `active` → Trip is happening (during trip)
 9. `completed` → Trip ended, post-trip settlement
+
+**State Flow:**
+- `planning` → `voting_destination` → `planning` (with destination set)
+- `planning` → `voting_dates` → `planning` (with dates set)
+- `planning` (with both set) → `tracking_flights`
+
+**Planning State Behavior:**
+- Accepts both destination suggestions and date availability simultaneously
+- Tracks counts: distinct members with destination suggestions vs date availability
+- Default: Nudges toward dates ("Let's start with dates...")
+- Tone adjustment: If destination count > date count, be less pushy about dates
+- Voting triggers (whichever happens first):
+  - Destination threshold: All members have suggested destinations → start `voting_destination`
+  - Date threshold: All members have shared date availability → start `voting_dates` (default preference)
+  - Timeout: 12 hours in planning → vote on whichever has more suggestions
 
 **Transition Logic:** Check after every message + cron job (hourly)
 

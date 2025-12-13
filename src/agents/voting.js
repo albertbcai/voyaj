@@ -1,6 +1,5 @@
 import { BaseAgent } from './base.js';
 import * as db from '../db/queries.js';
-import { twilioClient } from '../utils/twilio.js';
 import { emitEvent, EVENTS } from '../state/eventEmitter.js';
 import { checkStateTransitions } from '../state/stateMachine.js';
 import { parseDateRange } from '../utils/helpers.js';
@@ -24,7 +23,7 @@ export class VotingAgent extends BaseAgent {
     try {
 
     // Handle different stages
-    if (trip.stage === 'collecting_destinations' || trip.stage === 'planning' || (trip.stage === 'dates_set' && !trip.destination)) {
+    if (trip.stage === 'collecting_destinations' || trip.stage === 'planning') {
       // CRITICAL: Don't process destination suggestions if destination is already set
       if (trip.destination) {
         console.log(`   🗳️  Voting: Destination already set to "${trip.destination}", skipping destination suggestion processing`);
@@ -96,16 +95,7 @@ export class VotingAgent extends BaseAgent {
     const { trip, member, destinationSuggestions } = context;
     const suggestion = message.body.trim();
 
-    // If we're in dates_set stage and destination is not set, transition to planning first
-    if (trip.stage === 'dates_set' && !trip.destination) {
-      console.log(`   🗳️  Voting: Transitioning from dates_set to planning to collect destination suggestions`);
-      await db.updateTrip(trip.id, {
-        stage: 'planning',
-        stage_entered_at: new Date(),
-      });
-      // Update trip object in context for rest of processing
-      trip.stage = 'planning';
-    }
+    // Planning state handles both destination and date collection
 
     // Skip only very obvious non-suggestions (exact matches only)
     // Trust the orchestrator's AI-based routing decision
@@ -276,14 +266,13 @@ export class VotingAgent extends BaseAgent {
     
     if (uniqueDestinations.length === 1) {
       console.log(`   🗳️  Voting: Only 1 unique destination found ("${uniqueDestinations[0]}"), skipping voting and locking immediately`);
-      // Only one unique destination - lock it immediately
+      // Only one unique destination - lock it immediately and transition to planning
       await db.updateTrip(trip.id, {
         destination: uniqueDestinations[0],
-        stage: 'destination_set',
-        stage_entered_at: new Date(),
       });
-      // Trigger state transition - state machine action will send the next prompt
-      await checkStateTransitions(trip.id);
+      // Transition to planning - planning state will check if dates are set
+      const { requestStateTransition } = await import('../state/stateMachine.js');
+      await requestStateTransition(trip.id, 'planning', 'single destination locked');
       return {
         success: true,
         output: {
@@ -309,11 +298,15 @@ export class VotingAgent extends BaseAgent {
     const memberCount = context.allMembers.length;
     const majorityThreshold = Math.ceil(memberCount * 0.6);
 
+    // Format the poll message
+    const pollMessage = this.createVotingMessage(uniqueDestinations, 'destination', memberCount, majorityThreshold);
+
     return {
       success: true,
       output: {
         type: 'poll_started',
         pollType: 'destination',
+        message: pollMessage,
         options: uniqueDestinations,
         memberCount,
         majorityThreshold,
@@ -882,14 +875,14 @@ Return the exact option name that the user intended to vote for.`;
         winner = matchingOption;
       }
       
+      // Update destination and transition to planning
       await db.updateTrip(trip.id, {
         destination: winner,
-        stage: 'destination_set', // State machine will check if dates are set and transition appropriately
-        stage_entered_at: new Date(),
       });
 
-      // Trigger state transition - state machine will detect the stage change and emit the event automatically
-      await checkStateTransitions(trip.id);
+      // Transition to planning - planning state will check if dates are set and transition appropriately
+      const { requestStateTransition } = await import('../state/stateMachine.js');
+      await requestStateTransition(trip.id, 'planning', 'destination voting completed');
       
       return {
         success: true,
@@ -908,15 +901,15 @@ Return the exact option name that the user intended to vote for.`;
       const dates = parseDateRange(winner);
 
       if (dates.start && dates.end) {
+        // Update dates and transition to planning
         await db.updateTrip(trip.id, {
           start_date: dates.start,
           end_date: dates.end,
-          stage: 'dates_set',
-          stage_entered_at: new Date(),
         });
 
-        // Trigger state transition - state machine will detect the stage change and emit the event automatically
-        await checkStateTransitions(trip.id);
+        // Transition to planning - planning state will check if destination is set and transition appropriately
+        const { requestStateTransition } = await import('../state/stateMachine.js');
+        await requestStateTransition(trip.id, 'planning', 'date voting completed');
         
         return {
           success: true,
@@ -954,12 +947,6 @@ Return the exact option name that the user intended to vote for.`;
     return pending.length > 0 ? pending.join(', ') : 'everyone';
   }
 
-  async sendToGroup(tripId, message) {
-    const members = await db.getMembers(tripId);
-    for (const member of members) {
-      await twilioClient.sendSMS(member.phone_number, message);
-    }
-  }
 }
 
 

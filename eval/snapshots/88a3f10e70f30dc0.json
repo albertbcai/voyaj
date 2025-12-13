@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"intent\": \"vote\",\n  \"confidence\": \"high\",\n  \"reasoning\": \"The message 'I vote for Tokyo!' is a clear vote for the destination of Tokyo during the voting_destination stage.\"\n}",
+  "metadata": {
+    "prompt": "You are analyzing a group chat message to determine user intent for a trip planning app.\n\nTrip stage",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:26:40.938Z"
+  }
+}

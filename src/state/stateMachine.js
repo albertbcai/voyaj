@@ -21,26 +21,86 @@ const STAGES = {
         output: {
           type: 'status_update',
           status: `Awesome! We have ${members.length} people: ${memberNames} 🎉`,
-          details: `Time to plan! We need to figure out WHERE and WHEN.\n\n🌍 **Gathering destination ideas:** Everyone share where you'd like to go! You can suggest multiple places (e.g., "Tokyo", "Bali", "Portugal"). Once we have everyone's ideas, we'll vote!\n\n📅 **Date availability:** Share when you're available (e.g., "March 15-22" or "I'm flexible in April").\n\nLet's start with whatever you know first!`,
+          details: `Time to plan! We need to figure out WHEN and WHERE.\n\nLet's start with WHEN. Share your date availability (e.g., "March 15-22" or "I'm flexible in April").\n\n🌍 You can also share destination ideas if you have them! We'll collect both and vote when we're ready.\n\nLet's start with dates, but share whatever you know first!`,
           sendTo: 'group',
         },
       };
     },
   },
 
-  // Flexible planning state - allows both destination and dates to be collected simultaneously
+  // Planning state - collects both destination suggestions and date availability simultaneously
+  // Uses count-based logic to determine voting triggers and tone adjustment
   planning: {
-    next: null, // Dynamic - can go to voting_destination, voting_dates, or destination_set/dates_set
+    next: null, // Dynamic - can go to voting_destination, voting_dates, or tracking_flights
     trigger: 'check_whats_ready',
     condition: async (trip) => {
-      // This state doesn't auto-transition - transitions are handled by agents
-      // based on what's ready (destination suggestions vs date availability)
+      // This state doesn't auto-transition - transitions are handled by checkPlanningTransitions
+      // based on counts and what's ready (destination suggestions vs date availability)
       return false; // Never auto-transition from planning
+    },
+    action: async (trip, agents) => {
+      // Get counts for tone adjustment
+      const destinationSuggestionCount = await db.getDestinationSuggestionCount(trip.id);
+      const dateAvailabilityCount = await db.getDateAvailabilityCount(trip.id);
+      const memberCount = await db.getMemberCount(trip.id);
+      const hasDestination = !!trip.destination;
+      const hasDates = !!(trip.start_date && trip.end_date);
+
+      // If both are set, this shouldn't happen (should transition to tracking_flights)
+      // But handle gracefully
+      if (hasDestination && hasDates) {
+        return {
+          output: {
+            type: 'status_update',
+            status: `Perfect! We're all set! 🎉`,
+            details: `📍 ${trip.destination}\n📅 ${new Date(trip.start_date).toLocaleDateString()} - ${new Date(trip.end_date).toLocaleDateString()}\n\nTime to book flights! ✈️`,
+            sendTo: 'group',
+          },
+        };
+      }
+
+      // Determine tone based on counts
+      const destinationCountGreater = destinationSuggestionCount > dateAvailabilityCount;
+      
+      // Build message based on context
+      let status, details;
+      
+      if (hasDestination) {
+        // Destination already set, focus on dates
+        status = `Great! We're going to ${trip.destination}! 🎉`;
+        details = `Now we need dates! When are you available?\n\n📅 Reply with your date availability.\n\nExamples:\n• "March 15-22"\n• "I'm flexible in April"\n• "Late May or early June"`;
+      } else if (hasDates) {
+        // Dates already set, focus on destinations
+        const startDate = new Date(trip.start_date).toLocaleDateString();
+        const endDate = new Date(trip.end_date).toLocaleDateString();
+        status = `Great! Dates locked in: ${startDate} - ${endDate} 📅`;
+        details = `Now we need a destination! Where do you want to go?\n\n🌍 Share destination ideas - suggest any places that excite you! You can suggest multiple places.\n\nExamples: "Tokyo", "Bali", "Portugal", "Iceland"`;
+      } else {
+        // Nothing set yet - default to dates-first, adjust tone based on counts
+        if (destinationCountGreater) {
+          // More destination suggestions - less pushy about dates
+          status = `Time to plan! We need to figure out WHEN and WHERE.`;
+          details = `🌍 **Destination ideas:** ${destinationSuggestionCount > 0 ? `We have ${destinationSuggestionCount} suggestion(s) so far!` : 'Share where you\'d like to go!'} You can suggest multiple places.\n\n📅 **Date availability:** Share when you're available (e.g., "March 15-22" or "I'm flexible in April").\n\nLet's collect both - share whatever you know first!`;
+        } else {
+          // Default: dates-first approach
+          status = `Time to plan! We need to figure out WHEN and WHERE.`;
+          details = `Let's start with WHEN. Share your date availability (e.g., "March 15-22" or "I'm flexible in April").\n\n${destinationSuggestionCount > 0 ? `🌍 We also have ${destinationSuggestionCount} destination suggestion(s) - feel free to share more ideas too!` : '🌍 You can also share destination ideas if you have them!'}\n\nLet's start with dates, but share whatever you know first!`;
+        }
+      }
+
+      return {
+        output: {
+          type: 'status_update',
+          status,
+          details,
+          sendTo: 'group',
+        },
+      };
     },
   },
 
   voting_destination: {
-    next: 'destination_set',
+    next: 'planning', // Return to planning after voting completes
     trigger: 'poll_complete',
     condition: async (trip) => {
       const votes = await db.getVotes(trip.id, 'destination');
@@ -71,86 +131,8 @@ const STAGES = {
     },
   },
 
-  destination_set: {
-    next: null, // Dynamic - check if dates are set
-    trigger: 'immediate',
-    condition: async (trip) => {
-      // Always transition immediately
-      return true;
-    },
-    action: async (trip, agents) => {
-      // Check if dates are already set
-      const hasDates = trip.start_date && trip.end_date;
-      if (hasDates) {
-        // Both destination and dates are set - move to tracking flights
-        // Update stage directly (state machine will handle transition)
-        await db.updateTrip(trip.id, { stage: 'tracking_flights', stage_entered_at: new Date() });
-        return {
-          output: {
-            type: 'status_update',
-            status: `Perfect! We're going to ${trip.destination}! 🎉`,
-            details: `📍 ${trip.destination}\n📅 ${new Date(trip.start_date).toLocaleDateString()} - ${new Date(trip.end_date).toLocaleDateString()}\n\nTime to book flights! ✈️\n\nText me when you book: "BOOKED [airline] [flight number]" or just "BOOKED"`,
-            sendTo: 'group',
-          },
-        };
-      } else {
-        // Destination set, but still need dates - go back to planning
-        await db.updateTrip(trip.id, { stage: 'planning', stage_entered_at: new Date() });
-        return {
-          output: {
-            type: 'status_update',
-            status: `Great! We're going to ${trip.destination}! 🎉`,
-            details: `Now we need dates! When are you available?\n\n📅 Reply with your date availability.\n\nExamples:\n• "March 15-22"\n• "I'm flexible in April"\n• "Late May or early June"`,
-            sendTo: 'group',
-          },
-        };
-      }
-    },
-  },
-
-  dates_set: {
-    next: null, // Dynamic - check if destination is set
-    trigger: 'immediate',
-    condition: async (trip) => {
-      // Always transition immediately
-      return true;
-    },
-    action: async (trip, agents) => {
-      // Check if destination is already set
-      const hasDestination = trip.destination;
-      if (hasDestination) {
-        // Both destination and dates are set - move to tracking flights
-        // Update stage directly (state machine will handle transition)
-        await db.updateTrip(trip.id, { stage: 'tracking_flights', stage_entered_at: new Date() });
-        const startDate = new Date(trip.start_date).toLocaleDateString();
-        const endDate = new Date(trip.end_date).toLocaleDateString();
-        return {
-          output: {
-            type: 'status_update',
-            status: `Perfect! Dates locked in: ${startDate} - ${endDate} 📅`,
-            details: `📍 ${trip.destination}\n📅 ${startDate} - ${endDate}\n\nTime to book flights! ✈️\n\nText me when you book: "BOOKED [airline] [flight number]" or just "BOOKED"`,
-            sendTo: 'group',
-          },
-        };
-      } else {
-        // Dates set, but still need destination - go back to planning
-        await db.updateTrip(trip.id, { stage: 'planning', stage_entered_at: new Date() });
-        const startDate = new Date(trip.start_date).toLocaleDateString();
-        const endDate = new Date(trip.end_date).toLocaleDateString();
-        return {
-          output: {
-            type: 'status_update',
-            status: `Great! Dates locked in: ${startDate} - ${endDate} 📅`,
-            details: `Now we need a destination! Where do you want to go?\n\n🌍 Share destination ideas - suggest any places that excite you! You can suggest multiple places.\n\nExamples: "Tokyo", "Bali", "Portugal", "Iceland"`,
-            sendTo: 'group',
-          },
-        };
-      }
-    },
-  },
-
   voting_dates: {
-    next: 'dates_set',
+    next: 'planning', // Return to planning after voting completes
     trigger: 'poll_complete',
     condition: async (trip) => {
       const votes = await db.getVotes(trip.id, 'dates');
@@ -268,6 +250,7 @@ export async function checkStateTransitions(tripId) {
 }
 
 // Special function to handle flexible transitions from planning state
+// Uses count-based logic to determine voting triggers and tone adjustment
 async function checkPlanningTransitions(tripId, trip) {
   const memberCount = await db.getMemberCount(trip.id);
   const hasDestination = !!trip.destination;
@@ -285,28 +268,46 @@ async function checkPlanningTransitions(tripId, trip) {
     return;
   }
 
+  // Get counts for count-based logic
+  const destinationSuggestionCount = await db.getDestinationSuggestionCount(trip.id);
+  const dateAvailabilityCount = await db.getDateAvailabilityCount(trip.id);
+  
   // Check if destination suggestions are ready for voting
-  const suggestionCount = await db.getDestinationSuggestionCount(trip.id);
-  const allDestinationsSuggested = suggestionCount >= memberCount;
+  const allDestinationsSuggested = destinationSuggestionCount >= memberCount;
   const destinationTimeout = trip.stage_entered_at && 
     (Date.now() - new Date(trip.stage_entered_at).getTime() > 12 * 60 * 60 * 1000);
 
-  if (!hasDestination && (allDestinationsSuggested || destinationTimeout)) {
-    console.log(`   🔄 State Machine: Destination suggestions ready, transitioning to voting_destination`);
-    await db.updateTrip(tripId, {
-      stage: 'voting_destination',
-      stage_entered_at: new Date(),
-    });
-    emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: 'planning', to: 'voting_destination' });
-    await checkStateTransitions(tripId);
-    return;
-  }
-
   // Check if date availability is ready for voting
-  const availabilityCount = await db.getDateAvailabilityCount(trip.id);
-  const allDatesSubmitted = availabilityCount >= memberCount;
+  const allDatesSubmitted = dateAvailabilityCount >= memberCount;
   const datesTimeout = trip.stage_entered_at && 
     (Date.now() - new Date(trip.stage_entered_at).getTime() > 12 * 60 * 60 * 1000);
+
+  // Voting triggers: whichever threshold is met first
+  // Default preference: dates first, but if destination threshold is met first, vote on that
+  if (!hasDestination && (allDestinationsSuggested || destinationTimeout)) {
+    // If both are ready, prefer dates (default), but if destination is ready and dates aren't, vote on destination
+    if (!hasDates && allDatesSubmitted && !allDestinationsSuggested && !destinationTimeout) {
+      // Dates ready, destination not ready - vote on dates (default preference)
+      console.log(`   🔄 State Machine: Date availability ready, transitioning to voting_dates`);
+      await db.updateTrip(tripId, {
+        stage: 'voting_dates',
+        stage_entered_at: new Date(),
+      });
+      emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: 'planning', to: 'voting_dates' });
+      await checkStateTransitions(tripId);
+      return;
+    } else {
+      // Destination ready (or timeout) - vote on destination
+      console.log(`   🔄 State Machine: Destination suggestions ready, transitioning to voting_destination`);
+      await db.updateTrip(tripId, {
+        stage: 'voting_destination',
+        stage_entered_at: new Date(),
+      });
+      emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: 'planning', to: 'voting_destination' });
+      await checkStateTransitions(tripId);
+      return;
+    }
+  }
 
   if (!hasDates && (allDatesSubmitted || datesTimeout)) {
     console.log(`   🔄 State Machine: Date availability ready, transitioning to voting_dates`);
@@ -318,6 +319,70 @@ async function checkPlanningTransitions(tripId, trip) {
     await checkStateTransitions(tripId);
     return;
   }
+
+  // If timeout and both have suggestions, vote on whichever has more
+  if (destinationTimeout && datesTimeout && !hasDestination && !hasDates) {
+    if (destinationSuggestionCount >= dateAvailabilityCount) {
+      console.log(`   🔄 State Machine: Timeout - more destination suggestions, transitioning to voting_destination`);
+      await db.updateTrip(tripId, {
+        stage: 'voting_destination',
+        stage_entered_at: new Date(),
+      });
+      emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: 'planning', to: 'voting_destination' });
+      await checkStateTransitions(tripId);
+      return;
+    } else {
+      console.log(`   🔄 State Machine: Timeout - more date availability, transitioning to voting_dates`);
+      await db.updateTrip(tripId, {
+        stage: 'voting_dates',
+        stage_entered_at: new Date(),
+      });
+      emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: 'planning', to: 'voting_dates' });
+      await checkStateTransitions(tripId);
+      return;
+    }
+  }
+}
+
+// Centralized function to request state transitions
+// All state changes should go through this function
+export async function requestStateTransition(tripId, newStage, reason = '') {
+  const trip = await db.getTrip(tripId);
+  if (!trip) {
+    console.warn(`   ⚠️  State Machine: Trip ${tripId} not found for transition`);
+    return false;
+  }
+
+  const oldStage = trip.stage;
+  
+  // Validate that the transition is valid
+  const stage = STAGES[newStage];
+  if (!stage) {
+    console.warn(`   ⚠️  State Machine: Invalid stage ${newStage} requested`);
+    return false;
+  }
+
+  // Don't transition if already in that stage
+  if (oldStage === newStage) {
+    console.log(`   🔄 State Machine: Already in stage ${newStage}, skipping transition`);
+    return false;
+  }
+
+  console.log(`   🔄 State Machine: Requesting transition ${oldStage} → ${newStage}${reason ? ` (${reason})` : ''}`);
+
+  // Update stage
+  await db.updateTrip(tripId, {
+    stage: newStage,
+    stage_entered_at: new Date(),
+  });
+
+  // Emit event
+  emitEvent(EVENTS.STAGE_CHANGED, { tripId, from: oldStage, to: newStage });
+
+  // Check if next stage immediately transitions
+  await checkStateTransitions(tripId);
+
+  return true;
 }
 
 // Export STAGES so orchestrator can access actions

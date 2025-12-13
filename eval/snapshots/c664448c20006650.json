@@ -1,0 +1,9 @@
+{
+  "response": "🎉 Awesome, we've got unanimous votes for Tokyo! Everyone (Sarah and Mike) voted Tokyo, so it's LOCKED IN. 🗾 \n\nNext up: Let's figure out our travel dates! When are you all available in the next few months? I'll help us coordinate smoothly. 📅✈️\n\nStatus: ✅ Destination: Tokyo | ⏳ Dates: Not yet set",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-5-haiku-20241022",
+    "recordedAt": "2025-12-13T05:39:11.232Z"
+  }
+}

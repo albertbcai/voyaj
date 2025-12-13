@@ -1,0 +1,9 @@
+{
+  "response": "{\n  \"direction\": \"general\",\n  \"targetMember\": null,\n  \"reasoning\": \"The message 'March 15-20' does not appear to be a question directed at any specific group member. It seems to be a general statement or information about a date range, which could be relevant for the group to discuss.\"\n}",
+  "metadata": {
+    "prompt": "Analyze this group chat message to determine who the question is directed at:\n\nMessage: \"March 15-20",
+    "systemPrompt": null,
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:24:19.879Z"
+  }
+}

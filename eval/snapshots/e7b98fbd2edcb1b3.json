@@ -1,0 +1,9 @@
+{
+  "response": "Here's my plan: Let's focus on getting availability confirmed first. Sarah and Mike, can you each let me know your best dates in April? I'll keep track of who's available, then we can look at destination options. If you prefer to discuss destinations first, just let me know!",
+  "metadata": {
+    "prompt": "Craft the response (1-2 sentences max, or empty string if not needed):",
+    "systemPrompt": "You are Voyaj, a helpful trip coordinator. You facilitate group trip planning via group chat.\n\nYour ",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:23:27.257Z"
+  }
+}

@@ -21,7 +21,7 @@
       "from": "+15552222222",
       "message": "Mike",
       "expect": {
-        "stage": "collecting_members",
+        "stage": "planning",
         "memberCount": 2
       }
     },
@@ -75,7 +75,7 @@
       "from": "+15552222222",
       "message": "1",
       "expect": {
-        "stage": "destination_set",
+        "stage": "planning",
         "destination": "Tokyo",
         "voteCount": 2
       }
@@ -101,7 +101,8 @@
       "from": "+15553333333",
       "message": "March 18-22",
       "expect": {
-        "stage": "dates_set"
+        "stage": "planning",
+        "destination": "Tokyo"
       }
     }
   ]

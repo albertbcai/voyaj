@@ -1,0 +1,8 @@
+{
+  "response": "{\n  \"intent\": \"destination_suggestion\",\n  \"confidence\": \"high\",\n  \"reasoning\": \"The message contains an explicit suggestion of a travel destination (Tokyo), which is the primary focus of the message. This aligns with the 'destination_suggestion' intent.\"\n}",
+  "metadata": {
+    "prompt": "You are analyzing a group chat message to determine user intent for a trip planning app.\n\nTrip stage",
+    "model": "claude-3-haiku-20240307",
+    "recordedAt": "2025-12-13T06:27:26.175Z"
+  }
+}
