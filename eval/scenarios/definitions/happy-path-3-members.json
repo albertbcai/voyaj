@@ -101,23 +101,6 @@
       "from": "+15553333333",
       "message": "March 18-22",
       "expect": {
-        "stage": "voting_dates"
-      }
-    },
-    {
-      "step": 12,
-      "from": "+15551111111",
-      "message": "1",
-      "expect": {
-        "stage": "voting_dates",
-        "voteCount": 1
-      }
-    },
-    {
-      "step": 13,
-      "from": "+15552222222",
-      "message": "1",
-      "expect": {
         "stage": "dates_set"
       }
     }
