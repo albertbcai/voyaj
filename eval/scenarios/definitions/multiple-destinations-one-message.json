@@ -1,0 +1,43 @@
+{
+  "name": "multiple-destinations-one-message",
+  "description": "Member suggests multiple destinations in a single message",
+  "members": [
+    { "phone": "+15551111111", "name": "Sarah" },
+    { "phone": "+15552222222", "name": "Mike" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "+15551111111",
+      "message": "Sarah",
+      "expect": {
+        "memberCount": 1
+      }
+    },
+    {
+      "step": 2,
+      "from": "+15552222222",
+      "message": "Mike",
+      "expect": {
+        "stage": "planning",
+        "memberCount": 2
+      }
+    },
+    {
+      "step": 3,
+      "from": "+15551111111",
+      "message": "Tokyo or Paris",
+      "expect": {
+        "stage": "planning"
+      }
+    },
+    {
+      "step": 4,
+      "from": "+15552222222",
+      "message": "Bali, Indonesia",
+      "expect": {
+        "stage": "voting_destination"
+      }
+    }
+  ]
+}

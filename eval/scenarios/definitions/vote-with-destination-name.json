@@ -1,0 +1,83 @@
+{
+  "name": "vote-with-destination-name",
+  "description": "Members vote using destination names instead of numbers",
+  "members": [
+    { "phone": "+15551111111", "name": "Sarah" },
+    { "phone": "+15552222222", "name": "Mike" },
+    { "phone": "+15553333333", "name": "Alex" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "+15551111111",
+      "message": "Sarah",
+      "expect": {
+        "stage": "collecting_members",
+        "memberCount": 1
+      }
+    },
+    {
+      "step": 2,
+      "from": "+15552222222",
+      "message": "Mike",
+      "expect": {
+        "stage": "collecting_members",
+        "memberCount": 2
+      }
+    },
+    {
+      "step": 3,
+      "from": "+15553333333",
+      "message": "Alex",
+      "expect": {
+        "stage": "planning",
+        "memberCount": 3
+      }
+    },
+    {
+      "step": 4,
+      "from": "+15551111111",
+      "message": "Tokyo",
+      "expect": {
+        "destinationSuggestions": ["Tokyo"]
+      }
+    },
+    {
+      "step": 5,
+      "from": "+15552222222",
+      "message": "Bali",
+      "expect": {
+        "destinationSuggestions": ["Tokyo", "Bali"]
+      }
+    },
+    {
+      "step": 6,
+      "from": "+15553333333",
+      "message": "Paris",
+      "expect": {
+        "stage": "voting_destination",
+        "destinationSuggestions": ["Tokyo", "Bali", "Paris"]
+      }
+    },
+    {
+      "step": 7,
+      "from": "+15551111111",
+      "message": "Tokyo",
+      "expect": {
+        "stage": "voting_destination",
+        "voteCount": 1
+      }
+    },
+    {
+      "step": 8,
+      "from": "+15552222222",
+      "message": "I vote for Tokyo!",
+      "expect": {
+        "stage": "destination_set",
+        "destination": "Tokyo",
+        "voteCount": 2,
+        "responseMustContain": ["Tokyo"]
+      }
+    }
+  ]
+}

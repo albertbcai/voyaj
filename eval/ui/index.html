@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voyaj Eval Results</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+
+    .summary {
+      display: flex;
+      gap: 30px;
+      margin-top: 20px;
+      font-size: 18px;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-item.pass { color: #10b981; }
+    .summary-item.fail { color: #ef4444; }
+
+    .scenario-list {
+      display: grid;
+      gap: 20px;
+    }
+
+    .scenario-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .scenario-header {
+      padding: 20px;
+      border-bottom: 1px solid #e5e7eb;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .scenario-header:hover {
+      background: #f9fafb;
+    }
+
+    .scenario-header.pass {
+      border-left: 4px solid #10b981;
+    }
+
+    .scenario-header.fail {
+      border-left: 4px solid #ef4444;
+    }
+
+    .scenario-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .scenario-description {
+      color: #6b7280;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .scenario-meta {
+      display: flex;
+      gap: 20px;
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .scenario-body {
+      display: none;
+      padding: 20px;
+      background: #f9fafb;
+    }
+
+    .scenario-body.open {
+      display: block;
+    }
+
+    .conversation {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .message {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .message:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .message-from {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .message-timestamp {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    .message-bubble {
+      display: inline-block;
+      padding: 12px 16px;
+      border-radius: 18px;
+      max-width: 80%;
+      margin-bottom: 8px;
+    }
+
+    .message-bubble.user {
+      background: #3b82f6;
+      color: white;
+      margin-left: 20%;
+    }
+
+    .message-bubble.bot {
+      background: #e5e7eb;
+      color: #1f2937;
+    }
+
+    .message-state {
+      background: #f3f4f6;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'Courier New', monospace;
+      margin-top: 8px;
+    }
+
+    .message-state-line {
+      margin: 2px 0;
+    }
+
+    .message-validation {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .message-validation.pass {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #10b981;
+    }
+
+    .message-validation.fail {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #ef4444;
+    }
+
+    .step-number {
+      display: inline-block;
+      background: #6b7280;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .no-results {
+      text-align: center;
+      padding: 60px;
+      color: #6b7280;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-badge.pass {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-badge.fail {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧪 Voyaj Evaluation Results</h1>
+      <div class="summary" id="summary">
+        <div class="summary-item">
+          <span>Total: <strong id="total">0</strong></span>
+        </div>
+        <div class="summary-item pass">
+          <span>✅ Passed: <strong id="passed">0</strong></span>
+        </div>
+        <div class="summary-item fail">
+          <span>❌ Failed: <strong id="failed">0</strong></span>
+        </div>
+      </div>
+    </header>
+
+    <div class="scenario-list" id="scenarios">
+      <div class="no-results">
+        No evaluation results found. Run <code>npm run eval</code> to generate results.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadScenarios() {
+      try {
+        // Get list of JSON output files
+        const outputDir = '../scenarios/output';
+        const response = await fetch('scenarios.json');
+
+        if (!response.ok) {
+          console.error('No scenarios.json found');
+          return;
+        }
+
+        const scenarioFiles = await response.json();
+
+        let total = 0;
+        let passed = 0;
+        let failed = 0;
+
+        const container = document.getElementById('scenarios');
+        container.innerHTML = '';
+
+        for (const file of scenarioFiles) {
+          const scenarioResponse = await fetch(`../scenarios/output/${file}`);
+          if (!scenarioResponse.ok) continue;
+
+          const scenario = await scenarioResponse.json();
+          total++;
+
+          if (scenario.passed) {
+            passed++;
+          } else {
+            failed++;
+          }
+
+          const card = createScenarioCard(scenario);
+          container.appendChild(card);
+        }
+
+        // Update summary
+        document.getElementById('total').textContent = total;
+        document.getElementById('passed').textContent = passed;
+        document.getElementById('failed').textContent = failed;
+
+      } catch (error) {
+        console.error('Error loading scenarios:', error);
+      }
+    }
+
+    function createScenarioCard(scenario) {
+      const card = document.createElement('div');
+      card.className = 'scenario-card';
+
+      const header = document.createElement('div');
+      header.className = `scenario-header ${scenario.passed ? 'pass' : 'fail'}`;
+      header.innerHTML = `
+        <div>
+          <div class="scenario-title">
+            <span class="status-badge ${scenario.passed ? 'pass' : 'fail'}">
+              ${scenario.passed ? '✅ PASS' : '❌ FAIL'}
+            </span>
+            ${scenario.scenario}
+          </div>
+          <div class="scenario-description">${scenario.description}</div>
+        </div>
+        <div class="scenario-meta">
+          <span>${scenario.messages.length} steps</span>
+          <span>${scenario.duration}ms</span>
+          ${scenario.failures.length > 0 ? `<span>${scenario.failures.length} failures</span>` : ''}
+        </div>
+      `;
+
+      const body = document.createElement('div');
+      body.className = 'scenario-body';
+
+      const conversation = document.createElement('div');
+      conversation.className = 'conversation';
+
+      for (const msg of scenario.messages) {
+        const messageEl = createMessageElement(msg);
+        conversation.appendChild(messageEl);
+      }
+
+      body.appendChild(conversation);
+      card.appendChild(header);
+      card.appendChild(body);
+
+      // Toggle on click
+      header.addEventListener('click', () => {
+        body.classList.toggle('open');
+      });
+
+      return card;
+    }
+
+    function createMessageElement(msg) {
+      const el = document.createElement('div');
+      el.className = 'message';
+
+      const time = new Date(msg.timestamp).toLocaleTimeString();
+
+      el.innerHTML = `
+        <div class="message-header">
+          <span class="step-number">Step ${msg.step}</span>
+          <span class="message-timestamp">${time}</span>
+        </div>
+
+        <div>
+          <div class="message-from">${msg.memberName}:</div>
+          <div class="message-bubble user">${escapeHtml(msg.message)}</div>
+        </div>
+
+        ${msg.botResponse ? `
+          <div style="margin-top: 12px;">
+            <div class="message-from">Voyaj Bot:</div>
+            <div class="message-bubble bot">${escapeHtml(msg.botResponse)}</div>
+          </div>
+        ` : ''}
+
+        <div class="message-state">
+          <div class="message-state-line"><strong>State:</strong></div>
+          <div class="message-state-line">stage: ${msg.state.stage}</div>
+          <div class="message-state-line">members: ${msg.state.memberCount}</div>
+          ${msg.state.destination ? `<div class="message-state-line">destination: ${msg.state.destination}</div>` : ''}
+          ${msg.state.destinationSuggestions.length > 0 ? `<div class="message-state-line">suggestions: [${msg.state.destinationSuggestions.join(', ')}]</div>` : ''}
+          ${msg.state.voteCount > 0 ? `<div class="message-state-line">votes: ${msg.state.voteCount}</div>` : ''}
+        </div>
+
+        ${msg.expectations ? `
+          <div class="message-validation ${msg.passed ? 'pass' : 'fail'}">
+            ${msg.passed ? '✅ PASS' : `❌ FAIL: ${msg.failureReason}`}
+          </div>
+        ` : ''}
+      `;
+
+      return el;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Load scenarios on page load
+    loadScenarios();
+  </script>
+</body>
+</html>

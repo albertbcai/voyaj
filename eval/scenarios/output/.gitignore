@@ -1,0 +1,6 @@
+# Ignore all generated output files
+*.log
+*.json
+
+# But keep this directory
+!.gitignore

@@ -1,0 +1,85 @@
+{
+  "name": "destination-vote-tie",
+  "description": "3 members vote for 3 different destinations (tie scenario)",
+  "members": [
+    { "phone": "+15551111111", "name": "Sarah" },
+    { "phone": "+15552222222", "name": "Mike" },
+    { "phone": "+15553333333", "name": "Alex" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "+15551111111",
+      "message": "Sarah",
+      "expect": {
+        "memberCount": 1
+      }
+    },
+    {
+      "step": 2,
+      "from": "+15552222222",
+      "message": "Mike",
+      "expect": {
+        "memberCount": 2
+      }
+    },
+    {
+      "step": 3,
+      "from": "+15553333333",
+      "message": "Alex",
+      "expect": {
+        "stage": "planning",
+        "memberCount": 3
+      }
+    },
+    {
+      "step": 4,
+      "from": "+15551111111",
+      "message": "Tokyo",
+      "expect": {
+        "destinationSuggestions": ["Tokyo"]
+      }
+    },
+    {
+      "step": 5,
+      "from": "+15552222222",
+      "message": "Bali",
+      "expect": {
+        "destinationSuggestions": ["Tokyo", "Bali"]
+      }
+    },
+    {
+      "step": 6,
+      "from": "+15553333333",
+      "message": "Paris",
+      "expect": {
+        "stage": "voting_destination"
+      }
+    },
+    {
+      "step": 7,
+      "from": "+15551111111",
+      "message": "1",
+      "expect": {
+        "voteCount": 1
+      }
+    },
+    {
+      "step": 8,
+      "from": "+15552222222",
+      "message": "2",
+      "expect": {
+        "voteCount": 2
+      }
+    },
+    {
+      "step": 9,
+      "from": "+15553333333",
+      "message": "3",
+      "expect": {
+        "stage": "voting_destination",
+        "voteCount": 3
+      }
+    }
+  ]
+}

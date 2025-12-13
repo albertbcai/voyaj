@@ -1,0 +1,76 @@
+{
+  "name": "flexible-dates",
+  "description": "Members submit flexible date availability",
+  "members": [
+    { "phone": "+15551111111", "name": "Sarah" },
+    { "phone": "+15552222222", "name": "Mike" }
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "from": "+15551111111",
+      "message": "Sarah",
+      "expect": {
+        "memberCount": 1
+      }
+    },
+    {
+      "step": 2,
+      "from": "+15552222222",
+      "message": "Mike",
+      "expect": {
+        "stage": "planning",
+        "memberCount": 2
+      }
+    },
+    {
+      "step": 3,
+      "from": "+15551111111",
+      "message": "Tokyo",
+      "expect": {
+        "destinationSuggestions": ["Tokyo"]
+      }
+    },
+    {
+      "step": 4,
+      "from": "+15552222222",
+      "message": "Bali",
+      "expect": {
+        "stage": "voting_destination"
+      }
+    },
+    {
+      "step": 5,
+      "from": "+15551111111",
+      "message": "1",
+      "expect": {
+        "voteCount": 1
+      }
+    },
+    {
+      "step": 6,
+      "from": "+15552222222",
+      "message": "1",
+      "expect": {
+        "stage": "destination_set",
+        "destination": "Tokyo"
+      }
+    },
+    {
+      "step": 7,
+      "from": "+15551111111",
+      "message": "flexible",
+      "expect": {
+        "stage": "planning"
+      }
+    },
+    {
+      "step": 8,
+      "from": "+15552222222",
+      "message": "I'm flexible in April",
+      "expect": {
+        "stage": "voting_dates"
+      }
+    }
+  ]
+}
