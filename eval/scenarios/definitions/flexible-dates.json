@@ -69,7 +69,7 @@
       "from": "+15552222222",
       "message": "I'm flexible in April",
       "expect": {
-        "stage": "dates_set"
+        "stage": "voting_dates"
       }
     }
   ]
