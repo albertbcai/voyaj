@@ -1,6 +1,6 @@
 {
   "name": "large-date-overlap-requires-voting",
-  "description": "Large date overlap (60 days) triggers voting on split date chunks",
+  "description": "Large date overlap (20 days) triggers voting on split date chunks",
   "members": [
     { "phone": "+15551111111", "name": "Sarah" },
     { "phone": "+15552222222", "name": "Mike" },
@@ -76,7 +76,7 @@
     {
       "step": 9,
       "from": "+15551111111",
-      "message": "March 1 - April 30",
+      "message": "March 1 - March 20",
       "expect": {
         "stage": "planning"
       }
@@ -84,7 +84,7 @@
     {
       "step": 10,
       "from": "+15552222222",
-      "message": "March 1 - April 30",
+      "message": "March 1 - March 20",
       "expect": {
         "stage": "planning"
       }
@@ -92,7 +92,7 @@
     {
       "step": 11,
       "from": "+15553333333",
-      "message": "March 1 - April 30",
+      "message": "March 1 - March 20",
       "expect": {
         "stage": "voting_dates"
       }

@@ -1,7 +1,7 @@
 // Date overlap algorithm for finding common date windows
 // Focus: Find when everyone can travel together, not trip length
 
-const LARGE_WINDOW_THRESHOLD = 45; // days - split if overlap is larger than this
+const LARGE_WINDOW_THRESHOLD = 7; // days - split if overlap is larger than this
 
 export function findOverlappingDates(availabilities) {
   if (!availabilities || availabilities.length === 0) {
