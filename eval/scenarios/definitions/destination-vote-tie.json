@@ -78,7 +78,8 @@
       "message": "3",
       "expect": {
         "stage": "voting_destination",
-        "voteCount": 3
+        "voteCount": 3,
+        "responseMustContain": ["tie"]
       }
     }
   ]

@@ -358,6 +358,28 @@ export class VotingAgent extends BaseAgent {
     const majorityVoted = totalVotes >= majorityThreshold;
 
     if (majorityVoted) {
+      // Check for ties before closing poll
+      const results = await db.getVoteResults(trip.id, currentPoll.type);
+      const topVoteCount = parseInt(results[0]?.count || 0, 10);
+      const tiedOptions = results.filter(r => parseInt(r.count, 10) === topVoteCount);
+
+      if (tiedOptions.length > 1) {
+        // We have a tie - send nudge instead of closing
+        console.log(`   🗳️  Voting: Tie detected (${tiedOptions.length} options with ${topVoteCount} vote${topVoteCount > 1 ? 's' : ''} each)`);
+
+        return {
+          success: true,
+          output: {
+            type: 'vote_tie_detected',
+            pollType: currentPoll.type,
+            tiedOptions: tiedOptions.map(t => ({ choice: t.choice, voteCount: parseInt(t.count, 10) })),
+            allResults: results.map(r => ({ choice: r.choice, voteCount: parseInt(r.count, 10) })),
+            totalVotes,
+            sendTo: 'group',
+          },
+        };
+      }
+
       console.log(`   🗳️  Voting: Majority reached! Closing poll...`);
       return await this.closePoll(context);
     }
