@@ -28,15 +28,17 @@
       "from": "+15551111111",
       "message": "Tokyo or Paris",
       "expect": {
-        "stage": "planning"
+        "stage": "planning",
+        "destinationSuggestions": ["Tokyo", "Paris"]
       }
     },
     {
       "step": 4,
       "from": "+15552222222",
-      "message": "Bali, Indonesia",
+      "message": "Bali",
       "expect": {
-        "stage": "voting_destination"
+        "stage": "voting_destination",
+        "destinationSuggestions": ["Tokyo", "Paris", "Bali"]
       }
     }
   ]
